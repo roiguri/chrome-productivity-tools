@@ -1,13 +1,13 @@
 # Google Docs Equation Shortcut
 
-A lightweight Chrome extension that adds the **Alt+=** keyboard shortcut to insert equations in Google Docs, matching the familiar Microsoft Word behavior.
+A lightweight Chrome extension that adds the **Alt+=** keyboard shortcut to insert equations in Google Docs, matching Microsoft Word behavior.
 
 ## Features
 
-- **Simple Shortcut**: Press `Alt+=` to instantly insert an equation
-- **Minimal Permissions**: Only requests access to Google Docs (docs.google.com)
+- **Simple Shortcut**: Press `Alt+=` to insert an equation
+- **Auto-show Toolbar**: Automatically shows equation toolbar if hidden
+- **Minimal Permissions**: Only requests access to Google Docs
 - **No Background Processes**: Efficient content-script-only design
-- **Modular Architecture**: Easy to extend with additional shortcuts in the future
 
 ## Installation
 
@@ -39,12 +39,11 @@ A lightweight Chrome extension that adds the **Alt+=** keyboard shortcut to inse
 
 ## How It Works
 
-The extension uses two strategies to trigger equation insertion:
+1. **Direct Click**: Tries to click "New equation" button if toolbar is visible (instant)
+2. **Auto-show**: If toolbar is hidden, opens Help search (`Alt+/`) and executes "show equation toolbar"
+3. **Retry**: After showing toolbar, clicks the equation button
 
-1. **Direct Button Click** (Primary): Attempts to find and click the equation button in the Google Docs toolbar
-2. **Menu Navigation** (Fallback): Simulates the keyboard shortcut `Ctrl+Shift+I` → `E` to open Insert menu and select Equation
-
-This dual-strategy approach ensures reliability even if Google updates their UI.
+Works reliably whether the equation toolbar is visible or hidden.
 
 ## Development
 
@@ -54,9 +53,8 @@ This dual-strategy approach ensures reliability even if Google updates their UI.
 equation-shortcut/
 ├── manifest.json          # Chrome extension configuration (Manifest V3)
 ├── content-script.js      # Keyboard event handler and iframe detection
-├── equation-trigger.js    # Modular equation insertion logic
-├── icons/                 # Icon files (see icons/README.md)
-│   └── README.md         # Instructions for creating icons
+├── equation-trigger.js    # Equation insertion and toolbar management
+├── icons/                 # Extension icons (16x16, 48x48, 128x128)
 └── README.md             # This file
 ```
 
@@ -70,14 +68,11 @@ equation-shortcut/
 
 ### Debugging
 
-1. Open a Google Docs document
-2. Open Chrome DevTools (F12 or right-click → Inspect)
-3. Check the Console for extension logs prefixed with `[Equation Shortcut]`
-4. Common messages:
-   - `Extension loaded` - Content script initialized
-   - `Found Google Docs iframe` - Successfully detected the iframe
-   - `Alt+= detected` - Keyboard shortcut captured
-   - `Successfully triggered via...` - Equation insertion succeeded
+1. Open a Google Docs document and Chrome DevTools (F12)
+2. Check Console for warnings (only errors are logged)
+3. Common issues logged:
+   - `Failed to show toolbar` - Help search didn't work
+   - `Failed to insert equation` - Button not found after showing toolbar
 
 ### Testing
 
@@ -136,7 +131,7 @@ MIT License - feel free to use, modify, and distribute.
 
 ### Icons Not Showing
 
-The extension will work perfectly without custom icons - Chrome will show a default puzzle piece icon. See [icons/README.md](icons/README.md) for instructions on adding custom icons.
+Icons are included. If they don't appear, check that the `icons/` folder contains `icon16.png`, `icon48.png`, and `icon128.png`.
 
 ## Support
 
