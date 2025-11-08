@@ -2,26 +2,17 @@
   'use strict';
 
   /**
-   * Configuration for auto-fill targets
-   * Future versions can expand this to support multiple sites and fields
+   * Storage keys for dynamic configuration
    */
-  const AUTOFILL_CONFIGS = [
-    {
-      id: 'tau_id_field',
-      urlPattern: 'https://nidp.tau.ac.il/*',  // Reserved for future URL matching
-      fieldSelector: '#Ecom_User_Pid',
-      storageKey: 'tau_id_number',
-      enabled: true
-    }
-    // Future configurations can be added here:
-    // {
-    //   id: 'other_site_field',
-    //   urlPattern: 'https://example.com/*',
-    //   fieldSelector: '#custom-field-id',
-    //   storageKey: 'other_site_value',
-    //   enabled: true
-    // }
-  ];
+  const STORAGE_KEYS = {
+    VALUES: 'stored_values',
+    CONFIGS: 'autofill_configs'
+  };
+
+  /**
+   * Loaded configurations from storage
+   */
+  let AUTOFILL_CONFIGS = [];
 
   /**
    * Checks if a URL matches a pattern (supports wildcards)
@@ -144,14 +135,15 @@
   /**
    * Processes a single autofill configuration
    * @param {Object} config - The configuration object
+   * @param {Object} storedValues - All stored values
    * @returns {Promise<void>}
    */
-  async function processConfig(config) {
+  async function processConfig(config, storedValues) {
     if (!config.enabled) {
       return;
     }
 
-    console.log(`[Auto-Fill] Processing config: ${config.id}`);
+    console.log(`[Auto-Fill] Processing config: ${config.name} (${config.id})`);
 
     // Wait for the field to appear (with timeout)
     const field = await waitForElement(config.fieldSelector);
@@ -161,18 +153,29 @@
       return;
     }
 
-    // Retrieve the stored value
-    chrome.storage.local.get([config.storageKey], (result) => {
-      const value = result[config.storageKey];
+    // Get the value from stored values
+    const valueData = storedValues[config.valueKey];
 
-      if (!value) {
-        console.log(`[Auto-Fill] No value stored for: ${config.storageKey}`);
-        return;
-      }
+    if (!valueData || !valueData.value) {
+      console.log(`[Auto-Fill] No value found for key: ${config.valueKey}`);
+      return;
+    }
 
-      // Small delay to ensure password managers have filled their fields first
-      sleep(100).then(() => {
-        fillField(field, value);
+    // Small delay to ensure password managers have filled their fields first
+    await sleep(100);
+    fillField(field, valueData.value);
+  }
+
+  /**
+   * Loads configurations from storage
+   * @returns {Promise<{configs: Array, values: Object}>}
+   */
+  async function loadConfigurations() {
+    return new Promise((resolve) => {
+      chrome.storage.local.get([STORAGE_KEYS.CONFIGS, STORAGE_KEYS.VALUES], (result) => {
+        const configs = result[STORAGE_KEYS.CONFIGS] || [];
+        const values = result[STORAGE_KEYS.VALUES] || {};
+        resolve({ configs, values });
       });
     });
   }
@@ -184,6 +187,17 @@
   async function init() {
     console.log('[Auto-Fill] Content script loaded');
 
+    // Load configurations from storage
+    const { configs, values } = await loadConfigurations();
+    AUTOFILL_CONFIGS = configs;
+
+    if (AUTOFILL_CONFIGS.length === 0) {
+      console.log('[Auto-Fill] No configurations found');
+      return;
+    }
+
+    console.log(`[Auto-Fill] Loaded ${AUTOFILL_CONFIGS.length} configuration(s)`);
+
     // Check if we should activate on this page
     if (!shouldActivateOnCurrentPage()) {
       console.log('[Auto-Fill] Not activating on this page');
@@ -194,7 +208,7 @@
 
     // Process each enabled configuration
     for (const config of AUTOFILL_CONFIGS) {
-      await processConfig(config);
+      await processConfig(config, values);
     }
   }
 

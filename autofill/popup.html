@@ -3,90 +3,126 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Form Auto-Fill Settings</title>
+  <title>Form Auto-Fill</title>
   <style>
     body {
-      width: 300px;
-      padding: 15px;
+      width: 340px;
+      padding: 0;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
       font-size: 14px;
       direction: rtl;
       margin: 0;
+      background: white;
+    }
+
+    .header {
+      background: linear-gradient(135deg, #2af598 0%, #009efd 100%);
+      color: white;
+      padding: 24px 20px;
+      text-align: center;
     }
 
     h1 {
       font-size: 18px;
-      margin: 0 0 15px 0;
-      color: #333;
+      margin: 0 0 5px 0;
     }
 
-    .section {
+    .subtitle {
+      font-size: 12px;
+      opacity: 0.9;
+    }
+
+    .content {
+      padding: 15px;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
       margin-bottom: 15px;
     }
 
-    label {
-      display: block;
-      margin-bottom: 5px;
-      color: #555;
-      font-weight: 500;
+    .stat-card {
+      background: #fafafa;
+      padding: 16px;
+      border-radius: 8px;
+      text-align: center;
+      border: 1px solid #e0e0e0;
     }
 
-    input[type="text"] {
-      width: 100%;
-      padding: 8px;
-      border: 1px solid #ddd;
-      border-radius: 4px;
-      box-sizing: border-box;
-      font-size: 14px;
-      direction: ltr;
-      text-align: left;
+    .stat-value {
+      font-size: 24px;
+      font-weight: 600;
+      color: #009efd;
+      margin-bottom: 4px;
     }
 
-    input[type="text"]:focus {
-      outline: none;
-      border-color: #007AFF;
-      box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.1);
-    }
-
-    .button-group {
-      display: flex;
-      gap: 8px;
-      margin-top: 10px;
+    .stat-label {
+      font-size: 11px;
+      color: #6c757d;
     }
 
     button {
-      flex: 1;
-      padding: 8px 15px;
+      width: 100%;
+      padding: 12px;
       border: none;
-      border-radius: 4px;
+      border-radius: 6px;
       cursor: pointer;
       font-size: 14px;
       font-weight: 500;
-      transition: all 0.2s;
+      transition: all 0.15s;
+      margin-bottom: 8px;
     }
 
     .btn-primary {
-      background: #007AFF;
+      background: #009efd;
       color: white;
     }
 
     .btn-primary:hover {
-      background: #0056b3;
+      background: #0088d9;
     }
 
     .btn-secondary {
-      background: #f0f0f0;
-      color: #333;
+      background: #e9ecef;
+      color: #495057;
+      border: 1px solid #dee2e6;
     }
 
     .btn-secondary:hover {
-      background: #e0e0e0;
+      background: #dee2e6;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 30px 20px;
+      color: #6c757d;
+    }
+
+    .empty-state-icon {
+      font-size: 48px;
+      margin-bottom: 10px;
+    }
+
+    .empty-state-text {
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .footer {
+      padding: 16px;
+      background: #fafafa;
+      border-top: 1px solid #e0e0e0;
+      font-size: 11px;
+      color: #6c757d;
+      text-align: center;
     }
 
     .status {
       padding: 10px;
       border-radius: 4px;
-      margin-top: 10px;
+      margin-bottom: 10px;
       font-size: 13px;
       display: none;
     }
@@ -102,44 +138,46 @@
       color: #721c24;
       border: 1px solid #f5c6cb;
     }
-
-    .current-value {
-      padding: 8px;
-      background: #f8f8f8;
-      border-radius: 4px;
-      font-size: 13px;
-      color: #666;
-      direction: ltr;
-      text-align: left;
-    }
-
-    .help-text {
-      font-size: 12px;
-      color: #888;
-      margin-top: 5px;
-    }
   </style>
 </head>
 <body>
-  <h1>הגדרות מילוי אוטומטי</h1>
-
-  <div class="section">
-    <label for="idNumber">מספר זהות למילוי ב-TAU:</label>
-    <input type="text" id="idNumber" placeholder="הזן מספר זהות" maxlength="9">
-    <div class="help-text">המספר נשמר באופן מקומי בלבד ולא עוזב את המכשיר</div>
+  <div class="header">
+    <h1>מילוי אוטומטי</h1>
+    <div class="subtitle">Form Auto-Fill Extension</div>
   </div>
 
-  <div class="section">
-    <label>ערך שמור נוכחי:</label>
-    <div class="current-value" id="currentValue">לא הוגדר</div>
+  <div class="content">
+    <div class="status" id="status"></div>
+
+    <div id="statsSection" style="display: none;">
+      <div class="stats">
+        <div class="stat-card">
+          <div class="stat-value" id="valuesCount">0</div>
+          <div class="stat-label">ערכים שמורים</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="configsCount">0</div>
+          <div class="stat-label">הגדרות פעילות</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="emptyState" style="display: none;">
+      <div class="empty-state">
+        <div class="empty-state-icon">⚙️</div>
+        <div class="empty-state-text">
+          לא הוגדרו עדיין ערכים או הגדרות.<br>
+          לחץ על "נהל הגדרות" כדי להתחיל.
+        </div>
+      </div>
+    </div>
+
+    <button class="btn-primary" id="manageBtn">נהל הגדרות</button>
   </div>
 
-  <div class="button-group">
-    <button class="btn-primary" id="saveBtn">שמור</button>
-    <button class="btn-secondary" id="clearBtn">נקה</button>
+  <div class="footer">
+    🔒 כל המידע נשמר מקומית בדפדפן בלבד
   </div>
-
-  <div class="status" id="status"></div>
 
   <script src="popup.js"></script>
 </body>

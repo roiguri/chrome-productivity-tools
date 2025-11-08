@@ -1,25 +1,46 @@
 # Form Auto-Fill Extension
 
-A Chrome extension that automatically fills form fields with saved values. Designed with extensibility in mind for future multi-site support.
+A Chrome extension that automatically fills form fields with saved values on any website. Supports custom configurations for unlimited sites and form fields.
 
 ## Current Implementation
 
-**Version 1.0.0** - TAU Login Auto-Fill
+**Version 2.0.0** - Universal Auto-Fill with Custom Configurations
 
-Currently supports:
-- **Tel Aviv University Login Page** (`nidp.tau.ac.il`)
-- Automatically fills the ID number field (`Ecom_User_Pid`)
-- Works seamlessly with password managers
+Key capabilities:
+- **Any Website Support**: Configure auto-fill for unlimited websites
+- **Custom Field Selectors**: Use CSS selectors (including wildcards) to target any form field
+- **Multiple Values**: Store and manage multiple values (IDs, emails, etc.)
+- **Flexible Mapping**: One value can be used across multiple sites and fields
+- **Full Management UI**: Comprehensive options page for configuration management
+- **Import/Export**: Backup and restore your configurations
 
 ## Features
 
-- **Auto-Open Setup**: Popup automatically opens on first install to guide initial configuration
-- **Badge Notifications**: Shows "!" badge when ID is not configured yet
-- **Secure Local Storage**: Your ID number is stored only on your device using Chrome's local storage (never synced, never leaves your machine)
-- **Privacy-First**: Displays masked ID in settings (e.g., `12****89`)
-- **Password Manager Friendly**: Waits for password managers to fill username/password before auto-filling ID
-- **Hebrew RTL Interface**: Settings popup in Hebrew with proper right-to-left layout
-- **Extensible Architecture**: Code designed for easy addition of new sites and fields in future versions
+### Configuration Management
+- **Options Page**: Full-featured UI for managing values and configurations
+- **Stored Values**: Create reusable values with custom labels
+- **Site Configurations**: Define URL patterns, CSS selectors, and value mappings
+- **Enable/Disable**: Toggle configurations without deletion
+- **Import/Export**: Backup configurations as JSON files
+
+### Auto-Fill Intelligence
+- **URL Pattern Matching**: Supports wildcards (`*` and `?`) in URL patterns
+- **CSS Selector Wildcards**: Advanced selectors like `input[id*="username"]`, `[name^="email"]`
+- **Dynamic Loading**: Configurations loaded from storage on every page
+- **Password Manager Friendly**: Waits for password managers to fill before auto-filling
+- **Event Triggering**: Properly triggers input/change events for form validation
+
+### User Interface
+- **Modern Design**: Beautiful gradient-based UI with RTL (Hebrew) support
+- **Stats Dashboard**: Popup shows count of stored values and active configurations
+- **Badge Notifications**: Icon badge shows active configuration count or "!" if unconfigured
+- **Privacy-First**: Values displayed masked in UI (e.g., `12****89`)
+
+### Security & Privacy
+- **Secure Local Storage**: All data stored only on your device using Chrome's local storage
+- **Optional Permissions**: Requests host permissions only when adding new sites
+- **No Cloud Sync**: Data never leaves your machine
+- **Input Validation**: CSS selectors and patterns validated before saving
 
 ## Installation
 
@@ -28,26 +49,92 @@ Currently supports:
 3. Enable "Developer mode" (toggle in top-right)
 4. Click "Load unpacked"
 5. Select the `autofill/` directory
-6. **The settings popup will automatically open** - proceed to Initial Setup
+6. **The options page will automatically open** - proceed to Initial Setup
 
 ## Initial Setup
 
-On first install, the settings popup opens automatically:
+On first install, the options page opens automatically:
 
-1. Enter your Israeli ID number (9 digits) in the input field
-2. Click "שמור" (Save)
-3. You should see a success message
-4. Your ID is now stored securely and will auto-fill on TAU login pages
-5. The "!" badge will disappear from the extension icon
+### 1. Add Stored Values
 
-**Note**: If you see a red "!" badge on the extension icon, it means no ID is configured yet. Click the icon to open settings and save your ID.
+First, create values that you want to auto-fill:
+
+1. In the "ערכים שמורים" (Stored Values) section, click "+ הוסף ערך חדש"
+2. Enter a label (e.g., "ת.ז." for ID number, "מייל עבודה" for work email)
+3. Enter the actual value
+4. Click "שמור"
+
+**Example**:
+- Label: `ת.ז.`
+- Value: `123456789`
+
+### 2. Add Site Configurations
+
+Next, configure which sites and fields should be auto-filled:
+
+1. In the "הגדרות אתרים" (Site Configurations) section, click "+ הוסף הגדרה חדשה"
+2. Fill in the form:
+   - **שם ההגדרה** (Name): Descriptive name (e.g., "התחברות אוניברסיטת תל אביב")
+   - **תבנית URL** (URL Pattern): URL pattern with wildcards (e.g., `https://nidp.tau.ac.il/*`)
+   - **בורר CSS** (CSS Selector): Field selector (e.g., `#Ecom_User_Pid` or `input[name*="userid"]`)
+   - **ערך למילוי** (Value): Select from your stored values
+   - **הגדרה פעילה** (Enabled): Check to activate
+3. Click "שמור הגדרה"
+4. Grant permission when Chrome prompts for site access
+
+**Example Configuration**:
+- Name: `התחברות אוניברסיטת תל אביב`
+- URL Pattern: `https://nidp.tau.ac.il/*`
+- CSS Selector: `#Ecom_User_Pid`
+- Value: `ת.ז.` (select from dropdown)
+
+### 3. Verify Setup
+
+1. Click the extension icon to see your stats
+2. You should see the count of stored values and active configurations
+3. The badge will show the number of active configurations
 
 ## Usage
 
-1. Navigate to the TAU login page: `https://nidp.tau.ac.il/`
-2. The extension will automatically fill the ID number field
-3. Use your password manager or manually enter username and password
-4. Log in as usual
+### Basic Usage
+
+1. Navigate to any configured website
+2. The extension will automatically fill the configured field(s)
+3. Continue with your normal login/form submission process
+
+### Managing Configurations
+
+Access the options page at any time:
+- Right-click the extension icon → "Options"
+- Or click "נהל הגדרות" in the popup
+
+From the options page you can:
+- Add/edit/delete stored values
+- Add/edit/delete configurations
+- Enable/disable configurations without deletion
+- Export your configurations as JSON backup
+- Import previously exported configurations
+
+### CSS Selector Examples
+
+The extension supports standard CSS selectors with wildcards:
+
+**Basic Selectors**:
+- `#username` - Element with id="username"
+- `.login-field` - Element with class="login-field"
+- `input[name="user"]` - Input with exact name="user"
+
+**Wildcard Selectors**:
+- `input[id*="user"]` - Input with id containing "user"
+- `input[name^="email"]` - Input with name starting with "email"
+- `input[name$="ID"]` - Input with name ending with "ID"
+- `input[type="text"][placeholder*="username"]` - Complex combinations
+
+**URL Pattern Examples**:
+- `https://example.com/*` - Entire domain
+- `https://example.com/login*` - Specific path and subpaths
+- `https://*.example.com/login` - Subdomains
+- `https://example.com/*/auth` - Wildcard in middle
 
 ## How It Works
 
@@ -55,42 +142,66 @@ On first install, the settings popup opens automatically:
 
 **On Installation:**
 1. **Background Service Worker**: Starts on extension install
-2. **Auto-Open Popup**: Automatically opens settings popup for first-time setup
-3. **Badge Management**: Sets "!" badge if no ID is configured
+2. **Auto-Open Options**: Automatically opens options page for first-time setup
+3. **Badge Management**: Sets "!" badge if no configurations exist
 
-**On TAU Login Page:**
-1. **Content Script Injection**: When you visit `nidp.tau.ac.il`, the extension injects `content-script.js`
-2. **URL Pattern Matching**: Calls `shouldActivateOnCurrentPage()` which checks current URL against configured patterns
-   - Compares `window.location.href` to `urlPattern` in each config
-   - Supports wildcard matching (e.g., `https://nidp.tau.ac.il/*`)
+**On Any Web Page:**
+1. **Content Script Injection**: Content script runs on all URLs (`<all_urls>`)
+2. **Load Configurations**: Fetches all configurations and stored values from `chrome.storage.local`
+3. **URL Pattern Matching**: Checks if current page URL matches any configured pattern
+   - Compares `window.location.href` against all `urlPattern` values
+   - Supports wildcard matching (`*` = any characters, `?` = single character)
    - Exits early if no pattern matches (performance optimization)
-3. **Configuration Processing**: Loops through enabled configurations in `AUTOFILL_CONFIGS`
-4. **Field Detection**: Waits for the target field (`#Ecom_User_Pid`) to appear in the DOM
-5. **Value Retrieval**: Fetches your saved ID from `chrome.storage.local`
-6. **Auto-Fill**: After a small delay (100ms to allow password managers), fills the field
-7. **Event Dispatch**: Triggers `input` and `change` events for form validation
+4. **Configuration Processing**: For each matching enabled configuration:
+   - Waits for the target field to appear in DOM (5-second timeout)
+   - Retrieves the associated value from stored values
+   - After 100ms delay (for password manager compatibility), fills the field
+   - Dispatches `input` and `change` events for form validation
+5. **Multiple Fields**: Can fill multiple fields on same page if multiple configs match
 
-**On Settings Change:**
-1. **Storage Update**: ID is saved/cleared in `chrome.storage.local`
+**On Configuration Change:**
+1. **Storage Update**: Values/configurations saved to `chrome.storage.local`
 2. **Badge Update**: Background script listens to storage changes and updates badge
-3. **Badge Cleared**: When ID is saved, "!" badge disappears
-4. **Badge Shown**: When ID is cleared, "!" badge reappears
+3. **Badge Display**: Shows count of active configurations or "!" if none configured
+4. **Permission Request**: Requests host permission when adding new site
 
 ### Architecture
 
-The extension uses a **config-driven architecture** for easy extensibility:
+The extension uses a **dynamic config-driven architecture**:
 
+**Storage Schema:**
 ```javascript
-const AUTOFILL_CONFIGS = [
+// Stored Values (reusable across configurations)
+stored_values: {
+  "tau_id_12345": {
+    label: "ת.ז.",
+    value: "123456789"
+  },
+  "work_email_67890": {
+    label: "מייל עבודה",
+    value: "user@example.com"
+  }
+}
+
+// Configurations (loaded dynamically)
+autofill_configs: [
   {
-    id: 'tau_id_field',
-    urlPattern: 'https://nidp.tau.ac.il/*',  // Wildcard URL pattern
-    fieldSelector: '#Ecom_User_Pid',
-    storageKey: 'tau_id_number',
+    id: "config_uuid_1",
+    name: "התחברות אוניברסיטת תל אביב",
+    urlPattern: "https://nidp.tau.ac.il/*",
+    fieldSelector: "#Ecom_User_Pid",
+    valueKey: "tau_id_12345",  // References stored value
+    enabled: true
+  },
+  {
+    id: "config_uuid_2",
+    name: "פורטל אוניברסיטת תל אביב",
+    urlPattern: "https://portal.tau.ac.il/*",
+    fieldSelector: "input[name*='userid']",
+    valueKey: "tau_id_12345",  // Same value, different field
     enabled: true
   }
-  // Future configs can be added here
-];
+]
 ```
 
 ### Selective Page Activation
@@ -98,18 +209,17 @@ const AUTOFILL_CONFIGS = [
 For performance and security, the extension implements **selective page activation**:
 
 **URL Pattern Matching:**
-- Content script checks current URL against configured patterns
+- Content script loads configurations from storage on every page
+- Checks current URL against all configured patterns
 - Supports wildcard matching: `*` matches any characters, `?` matches single character
-- Only activates on matching pages (TAU login in current version)
-- Exits immediately if URL doesn't match any pattern
+- Only processes configurations when URL matches
+- Exits immediately if no patterns match
 
 **Benefits:**
-- ⚡ **Performance**: No unnecessary DOM monitoring on non-matching pages
+- ⚡ **Performance**: No DOM manipulation on non-matching pages
 - 🔒 **Security**: Minimal exposure, smaller attack surface
-- 🔄 **Future-Ready**: Infrastructure ready for user-configurable sites
-
-**Future Enhancement:**
-When user configuration is added, the extension can use Manifest V3's dynamic script registration to only inject content scripts on configured URLs, providing perfect performance with zero overhead on unconfigured sites.
+- 🔄 **Flexible**: Works with user-defined configurations
+- 📦 **Lightweight**: Zero overhead when no configs match
 
 ## Development
 
@@ -118,15 +228,18 @@ When user configuration is added, the extension can use Manifest V3's dynamic sc
 ```
 autofill/
 ├── manifest.json          # Extension manifest (Manifest V3)
-├── background.js         # Service worker for install handling & badge management
-├── popup.html            # Settings UI (Hebrew RTL)
-├── popup.js              # Settings logic & storage management
-├── content-script.js     # Auto-fill logic & field detection
-├── icons/                # Extension icons
+├── background.js          # Service worker for badge management
+├── popup.html             # Popup UI showing stats (Hebrew RTL)
+├── popup.js               # Popup logic for displaying stats
+├── options.html           # Full options/settings page (Hebrew RTL)
+├── options.js             # Configuration management logic
+├── options.css            # Options page styling
+├── content-script.js      # Auto-fill logic & field detection
+├── icons/                 # Extension icons
 │   ├── icon16.png
 │   ├── icon48.png
 │   └── icon128.png
-└── README.md            # This file
+└── README.md             # This file
 ```
 
 ### Testing Workflow (WSL Users)
@@ -187,45 +300,56 @@ For non-WSL development:
 
 ## Permissions
 
-This extension requests minimal permissions:
+This extension uses a privacy-focused permission model:
 
-- **`storage`**: To save your ID number locally on your device
-- **`host_permissions: ["https://nidp.tau.ac.il/*"]`**: To run the content script only on TAU login pages
+### Required Permissions:
+- **`storage`**: To save your values and configurations locally on your device
+- **`host_permissions: ["https://nidp.tau.ac.il/*"]`**: Default permission for TAU (for backward compatibility)
+
+### Optional Permissions (Requested On-Demand):
+- **`optional_host_permissions: ["<all_urls>"]`**: Requested when you add a new site configuration
+  - Chrome will prompt you to approve access to each specific domain
+  - You can revoke permissions anytime via Chrome settings
+  - Only requested domains are actually accessed
 
 **Privacy Note**: Your data never leaves your device. The extension:
 - ❌ Does NOT sync data to Chrome account
 - ❌ Does NOT make network requests
-- ❌ Does NOT access other websites
-- ✅ Stores data locally only
-- ✅ Works offline
+- ❌ Does NOT send data to external servers
+- ✅ Stores all data locally only
+- ✅ Works completely offline
+- ✅ Requests permissions only when you add sites
+- ✅ You control exactly which sites it can access
 
 ## Future Enhancements
 
-Planned features for future versions:
+Possible features for future versions:
 
-1. **Multi-Site Support**:
-   - User-configurable URL patterns
-   - Custom field selectors
-   - Multiple saved values per site
+1. **Visual Field Picker**:
+   - Click-to-select field on page
+   - Auto-generate CSS selectors
+   - Live selector testing
 
-2. **Advanced Field Matching**:
-   - XPath selectors
-   - Attribute-based matching
-   - Wildcard patterns
+2. **Advanced Selectors**:
+   - XPath selector support
+   - Complex CSS combinations
+   - Conditional field matching
 
-3. **URL Pattern Matching**:
-   - Activate `shouldActivateOnCurrentPage()` logic
-   - User-defined URL rules
-   - Per-config activation
+3. **Enhanced UX**:
+   - Drag-and-drop config reordering
+   - Search/filter configurations
+   - Bulk enable/disable
+   - Configuration templates
 
-4. **Import/Export**:
-   - Backup configurations
-   - Share settings across devices (manually)
+4. **Security Enhancements**:
+   - Optional value encryption
+   - Master password protection
+   - Auto-clear on browser close
 
-5. **Options Page**:
-   - Full configuration UI
-   - Add/edit/remove sites
-   - Field testing tool
+5. **Sync Options**:
+   - Manual sync via import/export (current)
+   - Optional Chrome sync integration
+   - Encrypted cloud backup
 
 ## Browser Compatibility
 
@@ -236,62 +360,104 @@ Planned features for future versions:
 
 ## Contributing
 
-Contributions welcome! To add support for a new site:
+Contributions welcome! Ideas for improvements:
 
-1. Add a new config to `AUTOFILL_CONFIGS` in `content-script.js`
-2. Add the URL to `host_permissions` in `manifest.json`
-3. Update `matches` in `content_scripts` in `manifest.json`
-4. Test thoroughly
-5. Submit a pull request
+1. **Code Improvements**:
+   - Optimize performance for pages with many DOM elements
+   - Add unit tests for core functions
+   - Improve error handling and user feedback
+
+2. **Feature Additions**:
+   - Implement visual field picker
+   - Add XPath selector support
+   - Create configuration templates library
+
+3. **Documentation**:
+   - Add video tutorials
+   - Create troubleshooting guides for specific sites
+   - Translate UI to other languages
+
+4. **Testing**:
+   - Test on various websites
+   - Report bugs and edge cases
+   - Suggest UX improvements
 
 ## Security Considerations
 
-- **Input Validation**: ID numbers are validated (non-empty check)
-- **No Code Injection**: Values are set via `.value` property, not innerHTML
+- **Input Validation**: Values and CSS selectors validated before saving
+- **No Code Injection**: Values set via `.value` property, not innerHTML
 - **Event Safety**: Uses native browser events only
-- **Storage Isolation**: Chrome's storage API is sandboxed per-extension
+- **Storage Isolation**: Chrome's storage API sandboxed per-extension
+- **Permission Control**: User explicitly approves each domain
+- **No Network Access**: Extension works completely offline
+- **Unencrypted Storage**: Values stored in plain text locally (consider browser-level security)
 
 ## Troubleshooting
 
-### ID Not Filling
+### Fields Not Filling
 
-1. **Check if ID is saved**:
-   - Click extension icon
-   - Verify "ערך שמור נוכחי" shows your masked ID
+1. **Check configurations**:
+   - Open options page (right-click icon → Options)
+   - Verify you have stored values created
+   - Verify you have configurations enabled for the current site
+   - Check that the configuration's URL pattern matches the current page
 
 2. **Check browser console**:
-   - Open DevTools on login page
+   - Open DevTools (F12) on the page
    - Look for `[Auto-Fill]` messages
-   - If no logs appear, extension may not be loaded
+   - Common messages:
+     - `No configurations found` - You haven't created any configs yet
+     - `Not activating on this page` - URL doesn't match any pattern
+     - `Field not found` - CSS selector doesn't match any element
+     - `No value found for key` - The value referenced in config doesn't exist
 
-3. **Verify extension is enabled**:
+3. **Verify permissions**:
    - Go to `chrome://extensions/`
-   - Ensure "Form Auto-Fill" is enabled
+   - Click "Details" on Form Auto-Fill
+   - Check "Site access" - should show configured domains
+   - If missing, re-save the configuration in options page
 
-4. **Check field selector**:
-   - TAU login page may have changed
-   - Inspect the ID number field
-   - Verify it still has `id="Ecom_User_Pid"`
+4. **Test CSS selector**:
+   - Open DevTools on the target page
+   - Open Console tab
+   - Type: `document.querySelector('YOUR_SELECTOR')`
+   - Should return the input element (not null)
+   - Example: `document.querySelector('#Ecom_User_Pid')`
+
+### Configuration Not Saving
+
+1. **Permission denied**:
+   - Chrome asks for permission when adding new site
+   - If you clicked "Deny", the config won't work
+   - Delete and re-create the config, then click "Allow"
+
+2. **Invalid CSS selector**:
+   - Extension validates selector syntax
+   - Check error message in options page
+   - Test selector in browser console first
+
+3. **Missing stored value**:
+   - Configurations require a stored value
+   - Create the value first, then create the config
 
 ### Password Manager Conflicts
 
-If your password manager overwrites the ID field:
-- The extension waits 100ms before filling
-- Some password managers may fill all fields
-- Try disabling autofill for the ID field in your password manager settings
+If your password manager interferes:
+- Extension waits 100ms before filling
+- Some password managers may overwrite after filling
+- Try disabling auto-fill for specific fields in password manager settings
+- Adjust field selector to target different element if needed
 
-### Extension Not Loading
+### Import/Export Issues
 
-1. **Check manifest errors**:
-   - Go to `chrome://extensions/`
-   - Look for error messages under the extension
+1. **Import fails**:
+   - Verify JSON file is valid
+   - Check that file was exported from this extension
+   - Look for error message in options page
 
-2. **Reload extension**:
-   - Click the reload icon
-   - Check for console errors
-
-3. **Verify permissions**:
-   - Ensure `storage` and `host_permissions` are granted
+2. **Exported file empty**:
+   - Ensure you have values and configs before exporting
+   - Check browser's download settings
 
 ## License
 
@@ -306,4 +472,6 @@ For issues or questions:
 
 ---
 
-**Made with ⚡ for TAU Students**
+**Version 2.0.0** - Universal Form Auto-Fill with Custom Configurations
+
+Originally created for TAU students, now available for everyone!

@@ -1,61 +1,69 @@
 (function() {
   'use strict';
 
-  const STORAGE_KEY = 'tau_id_number';
+  const STORAGE_KEYS = {
+    VALUES: 'stored_values',
+    CONFIGS: 'autofill_configs'
+  };
 
   /**
    * Handles extension installation and updates
-   * Opens popup on first install to guide user setup
+   * Opens options page on first install to guide user setup
    */
   chrome.runtime.onInstalled.addListener((details) => {
     console.log('[Auto-Fill Background] Extension installed/updated:', details.reason);
 
     if (details.reason === 'install') {
-      // Open popup automatically on first install
-      console.log('[Auto-Fill Background] First install - opening popup');
-      chrome.action.openPopup().catch((error) => {
-        // Note: openPopup() can fail if there's no active window
-        // In that case, we'll just set the badge as a reminder
-        console.log('[Auto-Fill Background] Could not open popup:', error);
+      // Open options page automatically on first install
+      console.log('[Auto-Fill Background] First install - opening options page');
+      chrome.runtime.openOptionsPage().catch((error) => {
+        console.log('[Auto-Fill Background] Could not open options page:', error);
         updateBadge();
       });
     }
 
-    // Check if ID is configured and update badge accordingly
+    // Check configuration and update badge accordingly
     updateBadge();
   });
 
   /**
    * Updates the extension badge based on configuration state
-   * Shows "!" if no ID is configured, clears badge otherwise
+   * Shows count of active configurations or "!" if none configured
    */
   function updateBadge() {
-    chrome.storage.local.get([STORAGE_KEY], (result) => {
-      if (!result[STORAGE_KEY]) {
-        // No ID configured - show badge reminder
+    chrome.storage.local.get([STORAGE_KEYS.VALUES, STORAGE_KEYS.CONFIGS], (result) => {
+      const values = result[STORAGE_KEYS.VALUES] || {};
+      const configs = result[STORAGE_KEYS.CONFIGS] || [];
+
+      const valuesCount = Object.keys(values).length;
+      const activeConfigsCount = configs.filter(c => c.enabled).length;
+
+      if (valuesCount === 0 || activeConfigsCount === 0) {
+        // No configuration - show badge reminder
         chrome.action.setBadgeText({ text: '!' });
         chrome.action.setBadgeBackgroundColor({ color: '#FF5722' });
         chrome.action.setTitle({
           title: 'Form Auto-Fill - Configuration Required'
         });
-        console.log('[Auto-Fill Background] Badge set - no ID configured');
+        console.log('[Auto-Fill Background] Badge set - no configurations');
       } else {
-        // ID is configured - clear badge
-        chrome.action.setBadgeText({ text: '' });
+        // Show count of active configurations
+        chrome.action.setBadgeText({ text: activeConfigsCount.toString() });
+        chrome.action.setBadgeBackgroundColor({ color: '#009efd' });
         chrome.action.setTitle({
-          title: 'Form Auto-Fill - Click to manage settings'
+          title: `Form Auto-Fill - ${activeConfigsCount} active configuration(s)`
         });
-        console.log('[Auto-Fill Background] Badge cleared - ID configured');
+        console.log(`[Auto-Fill Background] Badge set - ${activeConfigsCount} active config(s)`);
       }
     });
   }
 
   /**
    * Listen for storage changes to update badge dynamically
-   * When user saves/clears ID, badge updates immediately
+   * When user saves/clears values or configs, badge updates immediately
    */
   chrome.storage.onChanged.addListener((changes, areaName) => {
-    if (areaName === 'local' && changes[STORAGE_KEY]) {
+    if (areaName === 'local' && (changes[STORAGE_KEYS.VALUES] || changes[STORAGE_KEYS.CONFIGS])) {
       console.log('[Auto-Fill Background] Storage changed, updating badge');
       updateBadge();
     }
