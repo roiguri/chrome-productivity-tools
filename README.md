@@ -21,6 +21,25 @@ Add **Alt+=** keyboard shortcut to Google Docs for inserting equations, matching
 
 ---
 
+### Form Auto-Fill
+📁 [`autofill/`](./autofill/)
+
+Automatically fills form fields with saved values. Currently supports TAU login ID field, with extensible architecture for future multi-site support.
+
+- **Status:** 🚧 In Development
+- **Version:** 1.0.0
+- **Current Implementation:** TAU Login (nidp.tau.ac.il)
+- **Features:**
+  - Auto-fills saved values in form fields
+  - Config-driven architecture for easy expansion
+  - Works seamlessly with password managers
+  - Secure local storage (never synced)
+  - Hebrew RTL interface
+
+[📖 Read more →](./autofill/README.md)
+
+---
+
 ## Installation
 
 Each extension is self-contained in its own directory. To install:
@@ -40,6 +59,7 @@ See individual extension READMEs for detailed installation and usage instruction
 ```
 chrome-productivity-tools/
 ├── equation-shortcut/     # Google Docs equation shortcut extension
+├── autofill/             # Form auto-fill extension
 └── README.md             # This file
 ```
 

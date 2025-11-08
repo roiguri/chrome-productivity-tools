@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="he">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Form Auto-Fill Settings</title>
+  <style>
+    body {
+      width: 300px;
+      padding: 15px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+      font-size: 14px;
+      direction: rtl;
+      margin: 0;
+    }
+
+    h1 {
+      font-size: 18px;
+      margin: 0 0 15px 0;
+      color: #333;
+    }
+
+    .section {
+      margin-bottom: 15px;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 5px;
+      color: #555;
+      font-weight: 500;
+    }
+
+    input[type="text"] {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      box-sizing: border-box;
+      font-size: 14px;
+      direction: ltr;
+      text-align: left;
+    }
+
+    input[type="text"]:focus {
+      outline: none;
+      border-color: #007AFF;
+      box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.1);
+    }
+
+    .button-group {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    button {
+      flex: 1;
+      padding: 8px 15px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      transition: all 0.2s;
+    }
+
+    .btn-primary {
+      background: #007AFF;
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background: #0056b3;
+    }
+
+    .btn-secondary {
+      background: #f0f0f0;
+      color: #333;
+    }
+
+    .btn-secondary:hover {
+      background: #e0e0e0;
+    }
+
+    .status {
+      padding: 10px;
+      border-radius: 4px;
+      margin-top: 10px;
+      font-size: 13px;
+      display: none;
+    }
+
+    .status.success {
+      background: #d4edda;
+      color: #155724;
+      border: 1px solid #c3e6cb;
+    }
+
+    .status.error {
+      background: #f8d7da;
+      color: #721c24;
+      border: 1px solid #f5c6cb;
+    }
+
+    .current-value {
+      padding: 8px;
+      background: #f8f8f8;
+      border-radius: 4px;
+      font-size: 13px;
+      color: #666;
+      direction: ltr;
+      text-align: left;
+    }
+
+    .help-text {
+      font-size: 12px;
+      color: #888;
+      margin-top: 5px;
+    }
+  </style>
+</head>
+<body>
+  <h1>הגדרות מילוי אוטומטי</h1>
+
+  <div class="section">
+    <label for="idNumber">מספר זהות למילוי ב-TAU:</label>
+    <input type="text" id="idNumber" placeholder="הזן מספר זהות" maxlength="9">
+    <div class="help-text">המספר נשמר באופן מקומי בלבד ולא עוזב את המכשיר</div>
+  </div>
+
+  <div class="section">
+    <label>ערך שמור נוכחי:</label>
+    <div class="current-value" id="currentValue">לא הוגדר</div>
+  </div>
+
+  <div class="button-group">
+    <button class="btn-primary" id="saveBtn">שמור</button>
+    <button class="btn-secondary" id="clearBtn">נקה</button>
+  </div>
+
+  <div class="status" id="status"></div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
