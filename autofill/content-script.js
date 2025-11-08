@@ -24,17 +24,51 @@
   ];
 
   /**
+   * Checks if a URL matches a pattern (supports wildcards)
+   * @param {string} url - The URL to check
+   * @param {string} pattern - The pattern to match against (supports * wildcard)
+   * @returns {boolean} - True if URL matches pattern
+   *
+   * Examples:
+   *   matchesUrlPattern('https://nidp.tau.ac.il/login', 'https://nidp.tau.ac.il/*') -> true
+   *   matchesUrlPattern('https://other.com/', 'https://nidp.tau.ac.il/*') -> false
+   */
+  function matchesUrlPattern(url, pattern) {
+    // Convert wildcard pattern to regex
+    // * matches any characters
+    // ? matches single character
+    const regexPattern = pattern
+      .replace(/[.+^${}()|[\]\\]/g, '\\$&')  // Escape regex special chars
+      .replace(/\*/g, '.*')                   // * -> match any characters
+      .replace(/\?/g, '.');                   // ? -> match single character
+
+    const regex = new RegExp('^' + regexPattern + '$');
+    return regex.test(url);
+  }
+
+  /**
    * Checks if the extension should activate on the current page
-   * Currently returns true (always active)
-   * Future: Will check URL against config patterns
+   * Checks current URL against configured patterns
    *
    * @returns {boolean} - True if should activate
    */
   function shouldActivateOnCurrentPage() {
-    // TODO: Future implementation will check window.location.href
-    // against AUTOFILL_CONFIGS[].urlPattern
-    // For now, always return true since we're only on TAU pages
-    return true;
+    const currentUrl = window.location.href;
+
+    // Check if current URL matches any enabled configuration
+    for (const config of AUTOFILL_CONFIGS) {
+      if (!config.enabled) {
+        continue;
+      }
+
+      if (matchesUrlPattern(currentUrl, config.urlPattern)) {
+        console.log(`[Auto-Fill] Page matched pattern: ${config.urlPattern} (config: ${config.id})`);
+        return true;
+      }
+    }
+
+    console.log(`[Auto-Fill] No matching pattern for URL: ${currentUrl}`);
+    return false;
   }
 
   /**

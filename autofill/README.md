@@ -60,7 +60,10 @@ On first install, the settings popup opens automatically:
 
 **On TAU Login Page:**
 1. **Content Script Injection**: When you visit `nidp.tau.ac.il`, the extension injects `content-script.js`
-2. **Page Activation Check**: Calls `shouldActivateOnCurrentPage()` (currently always returns `true`)
+2. **URL Pattern Matching**: Calls `shouldActivateOnCurrentPage()` which checks current URL against configured patterns
+   - Compares `window.location.href` to `urlPattern` in each config
+   - Supports wildcard matching (e.g., `https://nidp.tau.ac.il/*`)
+   - Exits early if no pattern matches (performance optimization)
 3. **Configuration Processing**: Loops through enabled configurations in `AUTOFILL_CONFIGS`
 4. **Field Detection**: Waits for the target field (`#Ecom_User_Pid`) to appear in the DOM
 5. **Value Retrieval**: Fetches your saved ID from `chrome.storage.local`
@@ -81,7 +84,7 @@ The extension uses a **config-driven architecture** for easy extensibility:
 const AUTOFILL_CONFIGS = [
   {
     id: 'tau_id_field',
-    urlPattern: 'https://nidp.tau.ac.il/*',  // Future URL matching
+    urlPattern: 'https://nidp.tau.ac.il/*',  // Wildcard URL pattern
     fieldSelector: '#Ecom_User_Pid',
     storageKey: 'tau_id_number',
     enabled: true
@@ -89,6 +92,24 @@ const AUTOFILL_CONFIGS = [
   // Future configs can be added here
 ];
 ```
+
+### Selective Page Activation
+
+For performance and security, the extension implements **selective page activation**:
+
+**URL Pattern Matching:**
+- Content script checks current URL against configured patterns
+- Supports wildcard matching: `*` matches any characters, `?` matches single character
+- Only activates on matching pages (TAU login in current version)
+- Exits immediately if URL doesn't match any pattern
+
+**Benefits:**
+- ⚡ **Performance**: No unnecessary DOM monitoring on non-matching pages
+- 🔒 **Security**: Minimal exposure, smaller attack surface
+- 🔄 **Future-Ready**: Infrastructure ready for user-configurable sites
+
+**Future Enhancement:**
+When user configuration is added, the extension can use Manifest V3's dynamic script registration to only inject content scripts on configured URLs, providing perfect performance with zero overhead on unconfigured sites.
 
 ## Development
 
