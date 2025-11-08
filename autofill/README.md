@@ -13,6 +13,8 @@ Currently supports:
 
 ## Features
 
+- **Auto-Open Setup**: Popup automatically opens on first install to guide initial configuration
+- **Badge Notifications**: Shows "!" badge when ID is not configured yet
 - **Secure Local Storage**: Your ID number is stored only on your device using Chrome's local storage (never synced, never leaves your machine)
 - **Privacy-First**: Displays masked ID in settings (e.g., `12****89`)
 - **Password Manager Friendly**: Waits for password managers to fill username/password before auto-filling ID
@@ -26,15 +28,19 @@ Currently supports:
 3. Enable "Developer mode" (toggle in top-right)
 4. Click "Load unpacked"
 5. Select the `autofill/` directory
+6. **The settings popup will automatically open** - proceed to Initial Setup
 
 ## Initial Setup
 
-After installation:
+On first install, the settings popup opens automatically:
 
-1. Click the extension icon in your Chrome toolbar
-2. Enter your Israeli ID number (9 digits)
-3. Click "שמור" (Save)
+1. Enter your Israeli ID number (9 digits) in the input field
+2. Click "שמור" (Save)
+3. You should see a success message
 4. Your ID is now stored securely and will auto-fill on TAU login pages
+5. The "!" badge will disappear from the extension icon
+
+**Note**: If you see a red "!" badge on the extension icon, it means no ID is configured yet. Click the icon to open settings and save your ID.
 
 ## Usage
 
@@ -47,6 +53,12 @@ After installation:
 
 ### Technical Flow
 
+**On Installation:**
+1. **Background Service Worker**: Starts on extension install
+2. **Auto-Open Popup**: Automatically opens settings popup for first-time setup
+3. **Badge Management**: Sets "!" badge if no ID is configured
+
+**On TAU Login Page:**
 1. **Content Script Injection**: When you visit `nidp.tau.ac.il`, the extension injects `content-script.js`
 2. **Page Activation Check**: Calls `shouldActivateOnCurrentPage()` (currently always returns `true`)
 3. **Configuration Processing**: Loops through enabled configurations in `AUTOFILL_CONFIGS`
@@ -54,6 +66,12 @@ After installation:
 5. **Value Retrieval**: Fetches your saved ID from `chrome.storage.local`
 6. **Auto-Fill**: After a small delay (100ms to allow password managers), fills the field
 7. **Event Dispatch**: Triggers `input` and `change` events for form validation
+
+**On Settings Change:**
+1. **Storage Update**: ID is saved/cleared in `chrome.storage.local`
+2. **Badge Update**: Background script listens to storage changes and updates badge
+3. **Badge Cleared**: When ID is saved, "!" badge disappears
+4. **Badge Shown**: When ID is cleared, "!" badge reappears
 
 ### Architecture
 
@@ -79,6 +97,7 @@ const AUTOFILL_CONFIGS = [
 ```
 autofill/
 ├── manifest.json          # Extension manifest (Manifest V3)
+├── background.js         # Service worker for install handling & badge management
 ├── popup.html            # Settings UI (Hebrew RTL)
 ├── popup.js              # Settings logic & storage management
 ├── content-script.js     # Auto-fill logic & field detection
