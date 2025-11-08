@@ -24,11 +24,11 @@ Add **Alt+=** keyboard shortcut to Google Docs for inserting equations, matching
 ### Form Auto-Fill
 📁 [`autofill/`](./autofill/)
 
-Automatically fills form fields with saved values. Currently supports TAU login ID field, with extensible architecture for future multi-site support.
+Automatically fills form fields with saved values. Supports per-site configurations and programmatic injection so the content script only runs on pages you configure.
 
 - **Status:** ✅ Production Ready
-- **Version:** 1.0.0
-- **Current Implementation:** TAU Login (nidp.tau.ac.il)
+- **Version:** 2.0.0
+- **Current Implementation:** TAU Login (nidp.tau.ac.il) with extensible per-site configs
 - **Features:**
   - Auto-fills saved values in form fields
   - Config-driven architecture for easy expansion
