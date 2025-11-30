@@ -77,6 +77,7 @@ See individual extension READMEs for detailed installation and usage instruction
 chrome-productivity-tools/
 ├── equation-shortcut/     # Google Docs equation shortcut extension
 ├── autofill/             # Form auto-fill extension
+├── gibberish-fixer/       # Hebrew-English Text Swapper extension
 └── README.md             # This file
 ```
 
