@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "name": "Gibberish Fixer",
+  "version": "1.0.0",
+  "description": "Fixes text typed in the wrong language (Hebrew <-> English) via shortcut or popup.",
+  "permissions": [
+    "activeTab",
+    "scripting"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content-script.js"]
+    }
+  ],
+  "commands": {
+    "toggle-language": {
+      "suggested_key": {
+        "default": "Alt+L",
+        "mac": "Alt+L"
+      },
+      "description": "Swap selected text language"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

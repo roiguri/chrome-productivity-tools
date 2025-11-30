@@ -40,6 +40,23 @@ Automatically fills form fields with saved values. Supports per-site configurati
 
 ---
 
+### Gibberish Fixer
+📁 [`gibberish-fixer/`](./gibberish-fixer/)
+
+Fixes text typed in the wrong language (Hebrew <-> English) by swapping characters based on keyboard layout.
+
+- **Status:** ✅ Production Ready
+- **Version:** 1.0.0
+- **Features:**
+  - Instant text swap with **Alt+L**
+  - Smart language detection
+  - Preserves Undo history (Ctrl+Z)
+  - Popup for manual text conversion
+
+[📖 Read more →](./gibberish-fixer/README.md)
+
+---
+
 ## Installation
 
 Each extension is self-contained in its own directory. To install:
