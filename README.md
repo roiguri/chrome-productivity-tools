@@ -57,6 +57,22 @@ Fixes text typed in the wrong language (Hebrew <-> English) by swapping characte
 
 ---
 
+### Direction Switcher
+📁 [`direction-switcher/`](./direction-switcher/)
+
+Pick any element on the page and toggle its text direction (RTL/LTR) with a click. Essential for testing and fixing layout issues on mixed-direction sites.
+
+- **Status:** ✅ Production Ready
+- **Version:** 1.0.0
+- **Features:**
+  - Interactive element picker
+  - **Alt+R** keyboard shortcut
+  - Works on any website
+
+[📖 Read more →](./direction-switcher/README.md)
+
+---
+
 ## Installation
 
 Each extension is self-contained in its own directory. To install:
@@ -78,6 +94,7 @@ chrome-productivity-tools/
 ├── equation-shortcut/     # Google Docs equation shortcut extension
 ├── autofill/             # Form auto-fill extension
 ├── gibberish-fixer/       # Hebrew-English Text Swapper extension
+├── direction-switcher/    # Text Direction (RTL/LTR) toggler
 └── README.md             # This file
 ```
 
