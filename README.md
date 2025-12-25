@@ -73,6 +73,24 @@ Pick any element on the page and toggle its text direction (RTL/LTR) with a clic
 
 ---
 
+### Grammar Checker
+📁 [`grammar-checker/`](./grammar-checker/)
+
+Checks grammar and spelling in the currently focused input field using the LanguageTool API.
+
+- **Status:** ✅ Production Ready
+- **Version:** 1.0.0
+- **Features:**
+  - **Alt+G** to check text
+  - Spelling (Red) and Grammar (Blue) underlines
+  - Suggestion tooltips on hover
+  - Works on Input, Textarea, and ContentEditable (Rich Text)
+  - Privacy-focused (on-demand only)
+
+[📖 Read more →](./grammar-checker/README.md)
+
+---
+
 ## Installation
 
 Each extension is self-contained in its own directory. To install:
@@ -95,6 +113,7 @@ chrome-productivity-tools/
 ├── autofill/             # Form auto-fill extension
 ├── gibberish-fixer/       # Hebrew-English Text Swapper extension
 ├── direction-switcher/    # Text Direction (RTL/LTR) toggler
+├── grammar-checker/       # Grammar and Spelling Checker
 └── README.md             # This file
 ```
 
