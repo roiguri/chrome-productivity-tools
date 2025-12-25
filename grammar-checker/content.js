@@ -4,16 +4,44 @@ if (!window.grammarCheckerInitialized) {
     // Listen for the command from background script
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       if (request.action === 'checkGrammar') {
-        handleGrammarCheck();
+        // IMPORTANT: We must ensure we only check if THIS frame has focus.
+        // The background script sends message to ALL frames in the tab.
+        // We only want the focused frame to respond.
+        if (document.hasFocus()) {
+            handleGrammarCheck();
+        }
       }
     });
 
     async function handleGrammarCheck() {
+      // If we are in an iframe, activeElement might be the body or focused element.
+      // If we are in top frame, it might be an iframe.
+      // But if document.hasFocus() is true, then we are the focused document.
+
       const activeElement = document.activeElement;
 
+      // Google Docs Check
+      if (window.location.hostname.includes('docs.google.com')) {
+          showToast('Grammar Checker: Google Docs is not supported (use native tools).', document.body);
+          return;
+      }
+
       // Basic validation
+      // Note: activeElement might be null or body if blur happened, but since hasFocus() is true, something is active.
+
       if (!activeElement ||
           (activeElement.tagName !== 'INPUT' && activeElement.tagName !== 'TEXTAREA' && !activeElement.isContentEditable)) {
+
+        // Silence "Please focus" error if we are just not in a text field,
+        // to avoid spamming if user presses shortcut while focused on something else.
+        // BUT user expects action.
+        // If we are in an iframe that has focus, but no input is focused, maybe we shouldn't alert?
+        // Or maybe we should?
+
+        // Colab specialized check:
+        // Colab code cells are standard inputs? No, they are Monaco (divs).
+        // If it's a contentEditable div, we proceed.
+
         alert('Please focus on a text input field first.');
         return;
       }
@@ -38,7 +66,6 @@ if (!window.grammarCheckerInitialized) {
         showLoadingState(activeElement, false);
 
         if (matches.length === 0) {
-            // Optional: show a small toast "No errors found"
             showToast('No errors found', activeElement);
         } else {
             createOverlay(activeElement, matches, text);
@@ -79,17 +106,24 @@ if (!window.grammarCheckerInitialized) {
         toast.className = 'grammar-checker-toast';
         toast.textContent = message;
 
-        const rect = element.getBoundingClientRect();
-        // Toast is also fixed for consistency
-        toast.style.position = 'fixed';
-        toast.style.top = `${rect.bottom + 5}px`;
-        toast.style.left = `${rect.left}px`;
+        // If element is body, position center bottom
+        if (element === document.body) {
+            toast.style.position = 'fixed';
+            toast.style.bottom = '20px';
+            toast.style.left = '50%';
+            toast.style.transform = 'translateX(-50%)';
+        } else {
+            const rect = element.getBoundingClientRect();
+            toast.style.position = 'fixed';
+            toast.style.top = `${rect.bottom + 5}px`;
+            toast.style.left = `${rect.left}px`;
+        }
 
         document.body.appendChild(toast);
 
         setTimeout(() => {
             toast.remove();
-        }, 2000);
+        }, 3000);
     }
 
     function showLoadingState(element, isLoading) {

@@ -5,14 +5,21 @@ chrome.commands.onCommand.addListener((command) => {
 
       const tabId = tabs[0].id;
 
-      // Try to send message
+      // Try to send message.
+      // Note: By default chrome.tabs.sendMessage sends to all frames unless frameId is specified (in some contexts),
+      // BUT actually it sends to the top frame only if options are not set?
+      // Documentation says: "The message is sent to all frames in the tab." (Wait, let's verify).
+      // Actually, docs say: "Sends a single message to the content script(s) in the specified tab... If specific frames are not specified... the message is sent to all frames in the tab."
+      // So all frames receive it.
+
       chrome.tabs.sendMessage(tabId, { action: 'checkGrammar' }, (response) => {
         if (chrome.runtime.lastError) {
             console.log('Content script not ready. Injecting...', chrome.runtime.lastError.message);
 
             // Injection logic
+            // We inject into ALL frames to ensure we catch iframes (like Colab).
             chrome.scripting.executeScript({
-                target: { tabId: tabId },
+                target: { tabId: tabId, allFrames: true },
                 files: ['content.js']
             }, () => {
                 if (chrome.runtime.lastError) {
@@ -20,10 +27,8 @@ chrome.commands.onCommand.addListener((command) => {
                     return;
                 }
 
-                // Also inject CSS if needed, though manifest usually handles it.
-                // Dynamically injected scripts might need CSS injected too if not already there.
                 chrome.scripting.insertCSS({
-                    target: { tabId: tabId },
+                    target: { tabId: tabId, allFrames: true },
                     files: ['styles.css']
                 }, () => {
                     // Retry message
