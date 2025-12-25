@@ -4,13 +4,32 @@ chrome.commands.onCommand.addListener((command) => {
       if (tabs.length === 0) return;
 
       const tabId = tabs[0].id;
-      // We need to ensure the content script is injected if not already.
-      // However, manifest defines it for <all_urls>, so it should be there.
-      // But for robust handling on some pages (like chrome://), we catch errors.
 
+      // Try to send message
       chrome.tabs.sendMessage(tabId, { action: 'checkGrammar' }, (response) => {
         if (chrome.runtime.lastError) {
-            console.log('Could not send message. Content script might not be ready or page is restricted.');
+            console.log('Content script not ready. Injecting...', chrome.runtime.lastError.message);
+
+            // Injection logic
+            chrome.scripting.executeScript({
+                target: { tabId: tabId },
+                files: ['content.js']
+            }, () => {
+                if (chrome.runtime.lastError) {
+                    console.error('Injection failed:', chrome.runtime.lastError.message);
+                    return;
+                }
+
+                // Also inject CSS if needed, though manifest usually handles it.
+                // Dynamically injected scripts might need CSS injected too if not already there.
+                chrome.scripting.insertCSS({
+                    target: { tabId: tabId },
+                    files: ['styles.css']
+                }, () => {
+                    // Retry message
+                    chrome.tabs.sendMessage(tabId, { action: 'checkGrammar' });
+                });
+            });
         }
       });
     });
