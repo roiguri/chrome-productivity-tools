@@ -1,0 +1,65 @@
+/* Overlay Container */
+.grammar-checker-overlay {
+    position: absolute;
+    pointer-events: none; /* Let clicks pass through to the input */
+    z-index: 99999;
+    background: transparent;
+    overflow: hidden;
+}
+
+/* Underlines */
+.grammar-error-underline {
+    position: absolute;
+    border-bottom: 2px solid;
+    pointer-events: auto; /* Catch clicks on the underline/error itself */
+    cursor: pointer;
+    background: rgba(255, 0, 0, 0.1); /* Faint highlight */
+}
+
+.grammar-error-spelling {
+    border-bottom-color: #e01e5a; /* Red for spelling */
+}
+
+.grammar-error-grammar {
+    border-bottom-color: #4285F4; /* Blue for grammar */
+}
+
+/* Tooltip */
+.grammar-checker-tooltip {
+    position: fixed;
+    z-index: 100000;
+    background: white;
+    border: 1px solid #ccc;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    border-radius: 4px;
+    padding: 8px;
+    font-family: sans-serif;
+    font-size: 14px;
+    color: #333;
+    max-width: 300px;
+}
+
+.grammar-checker-option {
+    display: block;
+    padding: 4px 8px;
+    cursor: pointer;
+    border-radius: 4px;
+}
+
+.grammar-checker-option:hover {
+    background-color: #f0f0f0;
+}
+
+.grammar-checker-message {
+    font-weight: bold;
+    margin-bottom: 4px;
+    color: #555;
+}
+
+.grammar-checker-ignore {
+    margin-top: 6px;
+    font-size: 12px;
+    color: #888;
+    cursor: pointer;
+    text-align: right;
+}
