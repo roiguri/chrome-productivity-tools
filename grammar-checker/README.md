@@ -5,9 +5,9 @@ A Chrome extension that checks the grammar and spelling of the text in your curr
 ## Features
 
 - **Shortcut Activated:** Press **Alt+G** (or customized shortcut) to check the focused field.
-- **Visual Feedback:** Red wavy lines for spelling errors, blue for grammar/style issues.
-- **Smart Corrections:** Hover over errors to see suggestions and apply them with a click.
-- **Non-Intrusive:** Only runs when you ask it to. Clears automatically when you continue typing.
+- **Visual Feedback:** Highlights the input field and displays a floating panel with all errors.
+- **Smart Corrections:** Click "Fix" buttons in the panel to automatically apply suggestions.
+- **Non-Intrusive:** Only runs when you ask it to. Panel closes automatically if you edit the text manually.
 - **Privacy Focused:** Only sends the text of the *focused field* to the API when triggered.
 
 ## Installation
