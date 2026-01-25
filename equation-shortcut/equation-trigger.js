@@ -180,7 +180,92 @@ async function ensureToolbarVisible() {
   return true;
 }
 
+/**
+ * Inserts text using execCommand for performance, falling back to typing
+ * @param {string} text
+ */
+async function insertText(text) {
+  const iframe = document.querySelector('.docs-texteventtarget-iframe');
+  if (!iframe || !iframe.contentDocument) return;
+
+  // Try native insertion first
+  try {
+    if (iframe.contentDocument.execCommand('insertText', false, text)) {
+      return;
+    }
+  } catch (e) {
+    // Ignore error and try fallback
+  }
+
+  // Fallback to typing
+  await typeText(text);
+}
+
+/**
+ * Simulates typing text character by character
+ * @param {string} text
+ */
+async function typeText(text) {
+  for (const char of text) {
+    await simulateChar(char);
+  }
+}
+
+/**
+ * Simulates a single character input sequence
+ * @param {string} char
+ */
+async function simulateChar(char) {
+    const code = char.charCodeAt(0);
+    const options = { keyCode: code, which: code, key: char };
+
+    dispatchGenericEvent('keydown', char, options);
+    dispatchGenericEvent('keypress', char, options);
+    dispatchGenericEvent('keyup', char, options);
+
+    await sleep(5); // Minimal delay
+}
+
+/**
+ * Dispatch a generic keyboard event
+ */
+function dispatchGenericEvent(type, key, options = {}) {
+  const iframe = document.querySelector('.docs-texteventtarget-iframe');
+  if (!iframe || !iframe.contentDocument) return false;
+
+  const target = iframe.contentDocument.activeElement || iframe.contentDocument.body;
+
+  const event = new KeyboardEvent(type, {
+    key: key,
+    code: options.code || (key.length === 1 ? `Key${key.toUpperCase()}` : key),
+    keyCode: options.keyCode || key.charCodeAt(0),
+    which: options.which || key.charCodeAt(0),
+    bubbles: true,
+    cancelable: true,
+    view: window,
+    ...options
+  });
+
+  target.dispatchEvent(event);
+  return true;
+}
+
+/**
+ * Simulates pressing the Right Arrow key
+ */
+async function simulateRightArrow() {
+    const options = { code: 'ArrowRight', keyCode: 39, which: 39, key: 'ArrowRight' };
+    dispatchGenericEvent('keydown', 'ArrowRight', options);
+    dispatchGenericEvent('keyup', 'ArrowRight', options);
+    await sleep(20);
+}
+
 // Export for use in content script
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { triggerEquationInsertion };
+  module.exports = {
+    triggerEquationInsertion,
+    insertText,
+    typeText,
+    simulateRightArrow
+  };
 }
