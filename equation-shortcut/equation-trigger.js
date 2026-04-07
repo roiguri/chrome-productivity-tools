@@ -181,58 +181,74 @@ async function ensureToolbarVisible() {
 }
 
 /**
+ * Types a single character into the Google Docs iframe
+ * @param {string} char
+ */
+async function typeSingleChar(char) {
+  if (char === '\n') {
+    dispatchKey('Enter', { code: 'Enter', keyCode: 13 });
+  } else {
+    const iframe = document.querySelector('.docs-texteventtarget-iframe');
+    if (iframe && iframe.contentDocument) {
+      const target = iframe.contentDocument.activeElement || iframe.contentDocument.body;
+      const isSpace = char === ' ';
+      target.dispatchEvent(new KeyboardEvent('keydown', { key: char, code: isSpace ? 'Space' : undefined, keyCode: isSpace ? 32 : undefined, bubbles: true, cancelable: true }));
+      target.dispatchEvent(new KeyboardEvent('keypress', { key: char, charCode: char.charCodeAt(0), bubbles: true, cancelable: true }));
+      target.dispatchEvent(new InputEvent('beforeinput', { data: char, inputType: 'insertText', bubbles: true, cancelable: true }));
+      target.dispatchEvent(new InputEvent('input', { data: char, inputType: 'insertText', bubbles: true, cancelable: true }));
+      target.dispatchEvent(new KeyboardEvent('keyup', { key: char, bubbles: true, cancelable: true }));
+    }
+  }
+  await sleep(20);
+}
+
+/**
  * Types text character by character to trigger Google Docs auto-formatting
  * @param {string} text
  */
 async function typeText(text) {
   for (let i = 0; i < text.length; i++) {
+    await typeSingleChar(text[i]);
+  }
+}
+
+/**
+ * Types LaTeX text into the Google Docs equation editor.
+ * After each _ or ^ sub/superscript, presses ArrowRight to exit that mode
+ * so subsequent characters are not accidentally swallowed into the sub/superscript.
+ *
+ * Handles both single-char form (_Y) and braced form (_{abc}).
+ * @param {string} text - LaTeX content to type
+ */
+async function typeEquationText(text) {
+  let i = 0;
+  while (i < text.length) {
     const char = text[i];
 
-    // For spaces, we need to make sure we dispatch a space key properly
-    if (char === ' ') {
-      dispatchKey(' ', { code: 'Space', keyCode: 32 });
-    } else if (char === '\n') {
-      dispatchKey('Enter', { code: 'Enter', keyCode: 13 });
-    } else {
-      // It's crucial for equations that we send keypress with the actual char
-      const iframe = document.querySelector('.docs-texteventtarget-iframe');
-      if (iframe && iframe.contentDocument) {
-        const target = iframe.contentDocument.activeElement || iframe.contentDocument.body;
+    if ((char === '_' || char === '^') && i + 1 < text.length) {
+      await typeSingleChar(char);
+      i++;
 
-        // keydown
-        target.dispatchEvent(new KeyboardEvent('keydown', {
-          key: char,
-          bubbles: true, cancelable: true
-        }));
-
-        // keypress (legacy but often required by editors)
-        target.dispatchEvent(new KeyboardEvent('keypress', {
-          key: char,
-          charCode: char.charCodeAt(0),
-          bubbles: true, cancelable: true
-        }));
-
-        // Input event (the actual text insertion)
-        target.dispatchEvent(new InputEvent('beforeinput', {
-          data: char,
-          inputType: 'insertText',
-          bubbles: true, cancelable: true
-        }));
-        target.dispatchEvent(new InputEvent('input', {
-          data: char,
-          inputType: 'insertText',
-          bubbles: true, cancelable: true
-        }));
-
-        // keyup
-        target.dispatchEvent(new KeyboardEvent('keyup', {
-          key: char,
-          bubbles: true, cancelable: true
-        }));
+      if (text[i] === '{') {
+        i++; // skip opening {
+        while (i < text.length && text[i] !== '}') {
+          await typeSingleChar(text[i]);
+          i++;
+        }
+        if (i < text.length) i++; // skip closing }
+      } else {
+        // Single character sub/superscript
+        await typeSingleChar(text[i]);
+        i++;
       }
+
+      // Exit sub/superscript mode before continuing
+      dispatchKey('ArrowRight', { code: 'ArrowRight', keyCode: 39 });
+      await sleep(30);
+    } else {
+      await typeSingleChar(char);
+      i++;
     }
-    // Small delay to allow Docs to process each char, especially important for backslash commands + space
-    await sleep(20);
   }
 }
 
@@ -315,43 +331,54 @@ async function processSelectedTextWithEquations(text) {
   await sleep(100);
 
   const tokens = parseTextWithEquations(text);
+  // Track whether cursor is at the start of a line so we don't add unnecessary newlines
+  let atLineStart = true;
 
-  for (const token of tokens) {
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    const hasMoreTokens = i < tokens.length - 1;
+
     if (token.type === 'text') {
       await typeText(token.value);
+      atLineStart = token.value.endsWith('\n');
     } else if (token.type === 'inline') {
-      // Trigger equation insertion
       const success = await triggerEquationInsertion();
       if (success) {
         await sleep(200); // Wait for equation box to activate
-        await typeText(token.value);
+        await typeEquationText(token.value);
         exitEquationEditor();
         await sleep(100);
       } else {
-        // Fallback to normal text if we can't open equation editor
         await typeText('$' + token.value + '$');
       }
+      atLineStart = false;
     } else if (token.type === 'block') {
-      // For block, insert newline, equation, newline
-      dispatchKey('Enter', { code: 'Enter', keyCode: 13 });
-      await sleep(100);
+      // Only add a leading newline if there's preceding content on the same line
+      if (!atLineStart) {
+        dispatchKey('Enter', { code: 'Enter', keyCode: 13 });
+        await sleep(100);
+      }
 
       const success = await triggerEquationInsertion();
       if (success) {
         await sleep(200);
-        await typeText(token.value);
+        await typeEquationText(token.value);
         exitEquationEditor();
         await sleep(100);
-        dispatchKey('Enter', { code: 'Enter', keyCode: 13 });
-        await sleep(100);
+        // Only add a trailing newline if there's more content following
+        if (hasMoreTokens) {
+          dispatchKey('Enter', { code: 'Enter', keyCode: 13 });
+          await sleep(100);
+        }
       } else {
         await typeText('$$' + token.value + '$$');
       }
+      atLineStart = true;
     }
   }
 }
 
 // Export for use in content script
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { triggerEquationInsertion, parseTextWithEquations, processSelectedTextWithEquations };
+  module.exports = { triggerEquationInsertion, parseTextWithEquations, processSelectedTextWithEquations, typeEquationText };
 }

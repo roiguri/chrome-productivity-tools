@@ -9,49 +9,26 @@
   let iframeDetected = false;
 
   async function getSelectedText() {
+    const iframe = document.querySelector('.docs-texteventtarget-iframe');
+    if (!iframe || !iframe.contentDocument) {
+      console.warn('[Equation Shortcut] getSelectedText: no iframe found');
+      return '';
+    }
+
+    // execCommand must be called synchronously during the user gesture (before any
+    // await), otherwise the browser blocks it. This copies selected text to clipboard.
+    const copyResult = iframe.contentDocument.execCommand('copy');
+    console.log('[Equation Shortcut] execCommand copy result:', copyResult);
+
+    // Wait briefly for the clipboard to update
+    await new Promise(resolve => setTimeout(resolve, 100));
+
     try {
-      // Save current clipboard content if possible
-      let originalClipboard = '';
-      try {
-        originalClipboard = await navigator.clipboard.readText();
-      } catch (e) {
-        // Might fail if clipboard is empty or lacks permission for read
-      }
-
-      // Write a known dummy string
-      const dummyString = '___EQUATION_SHORTCUT_DUMMY___';
-      await navigator.clipboard.writeText(dummyString);
-
-      // Simulate Copy
-      document.execCommand('copy');
-
-      // Wait a tiny bit for the clipboard to update
-      await new Promise(resolve => setTimeout(resolve, 50));
-
-      const newClipboard = await navigator.clipboard.readText();
-
-      // If it's still the dummy string, nothing was selected/copied
-      if (newClipboard === dummyString) {
-        // Restore original
-        if (originalClipboard) {
-          await navigator.clipboard.writeText(originalClipboard);
-        } else {
-          await navigator.clipboard.writeText(''); // Clear dummy
-        }
-        return '';
-      }
-
-      // Restore original clipboard
-      if (originalClipboard) {
-        await navigator.clipboard.writeText(originalClipboard);
-      } else {
-        await navigator.clipboard.writeText(''); // Clear if it was originally empty
-      }
-
-      return newClipboard;
-
+      const text = await navigator.clipboard.readText();
+      console.log('[Equation Shortcut] clipboard text:', JSON.stringify(text));
+      return text || '';
     } catch (e) {
-      console.warn('[Equation Shortcut] Failed to read selection via clipboard', e);
+      console.warn('[Equation Shortcut] Failed to read clipboard', e);
       return '';
     }
   }
@@ -62,6 +39,8 @@
       event.stopPropagation();
 
       const selectedText = await getSelectedText();
+      console.log('[Equation Shortcut] selectedText:', JSON.stringify(selectedText));
+      console.log('[Equation Shortcut] processSelectedTextWithEquations available:', typeof processSelectedTextWithEquations === 'function');
 
       if (selectedText && selectedText.trim().length > 0) {
         // Call the new handling function inside equation-trigger.js
