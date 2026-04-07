@@ -4,7 +4,10 @@
   "version": "1.0.0",
   "description": "Add Alt+= keyboard shortcut to insert equations in Google Docs (matches Microsoft Word behavior)",
 
-  "permissions": [],
+  "permissions": [
+    "clipboardRead",
+    "clipboardWrite"
+  ],
 
   "host_permissions": [
     "https://docs.google.com/*"
