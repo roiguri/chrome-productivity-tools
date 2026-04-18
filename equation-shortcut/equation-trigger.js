@@ -213,43 +213,211 @@ async function typeText(text) {
 }
 
 /**
- * Types LaTeX text into the Google Docs equation editor.
- * After each _ or ^ sub/superscript, presses ArrowRight to exit that mode
- * so subsequent characters are not accidentally swallowed into the sub/superscript.
- *
- * Handles both single-char form (_Y) and braced form (_{abc}).
+ * Entry point: types LaTeX content into the Google Docs equation editor.
+ * Handles \commands, subscripts/superscripts, and braced arguments correctly.
  * @param {string} text - LaTeX content to type
  */
 async function typeEquationText(text) {
   let i = 0;
   while (i < text.length) {
-    const char = text[i];
-
-    if ((char === '_' || char === '^') && i + 1 < text.length) {
-      await typeSingleChar(char);
-      i++;
-
-      if (text[i] === '{') {
-        i++; // skip opening {
-        while (i < text.length && text[i] !== '}') {
-          await typeSingleChar(text[i]);
-          i++;
-        }
-        if (i < text.length) i++; // skip closing }
-      } else {
-        // Single character sub/superscript
-        await typeSingleChar(text[i]);
-        i++;
-      }
-
-      // Exit sub/superscript mode before continuing
-      dispatchKey('ArrowRight', { code: 'ArrowRight', keyCode: 39 });
-      await sleep(30);
-    } else {
-      await typeSingleChar(char);
-      i++;
-    }
+    i = await typeEquationToken(text, i);
   }
+}
+
+/**
+ * Processes one LaTeX token starting at index i.
+ * Returns the index after the token.
+ * @param {string} text
+ * @param {number} i
+ * @returns {Promise<number>}
+ */
+async function typeEquationToken(text, i) {
+  const char = text[i];
+
+  if (char === '\\') {
+    return await handleLatexCommand(text, i);
+  }
+
+  if ((char === '_' || char === '^') && i + 1 < text.length) {
+    await typeSingleChar(char);
+    i++;
+    if (text[i] === '{') {
+      i++; // skip {
+      i = await typeEquationContent(text, i, '}');
+      if (i < text.length) i++; // skip }
+    } else {
+      i = await typeEquationToken(text, i);
+    }
+    dispatchKey('ArrowRight', { code: 'ArrowRight', keyCode: 39 });
+    await sleep(30);
+    return i;
+  }
+
+  await typeSingleChar(char);
+  return i + 1;
+}
+
+/**
+ * Processes all tokens from i until stopChar (or end of string).
+ * Returns the index of stopChar (not consumed).
+ * @param {string} text
+ * @param {number} i
+ * @param {string} [stopChar]
+ * @returns {Promise<number>}
+ */
+async function typeEquationContent(text, i, stopChar) {
+  while (i < text.length && text[i] !== stopChar) {
+    i = await typeEquationToken(text, i);
+  }
+  return i;
+}
+
+/**
+ * Handles a \command starting at index i (where text[i] === '\\').
+ * Looks up the command in latex-mathquill-map.js and dispatches the
+ * correct MathQuill key sequence.
+ * @param {string} text
+ * @param {number} i
+ * @returns {Promise<number>}
+ */
+/**
+ * Types a string using only keydown+keypress — no input events.
+ * Used for LaTeX command names so MathQuill's internal command buffer
+ * is built through its normal keyboard pipeline, not bypassed via input events.
+ * @param {string} str
+ */
+async function typeCommandSequence(str) {
+  const iframe = document.querySelector('.docs-texteventtarget-iframe');
+  if (!iframe || !iframe.contentDocument) return;
+  const target = iframe.contentDocument.activeElement || iframe.contentDocument.body;
+  for (const c of str) {
+    target.dispatchEvent(new KeyboardEvent('keydown', {
+      key: c, bubbles: true, cancelable: true
+    }));
+    target.dispatchEvent(new KeyboardEvent('keypress', {
+      key: c, charCode: c.charCodeAt(0), bubbles: true, cancelable: true
+    }));
+    await sleep(20);
+  }
+}
+
+async function handleLatexCommand(text, i) {
+  i++; // skip backslash
+
+  // Read alphabetic command name
+  let name = '';
+  while (i < text.length && /[a-zA-Z]/.test(text[i])) {
+    name += text[i++];
+  }
+
+  // Non-alphabetic escape like \{ \} — type the following character literally
+  if (name === '') {
+    if (i < text.length) {
+      await typeSingleChar(text[i]);
+      return i + 1;
+    }
+    return i;
+  }
+
+  // Strip commands: \left( → (, \right) → )
+  if (MATHQUILL_STRIP_COMMANDS.has(name)) {
+    return i; // resume at the character after the command
+  }
+
+  // Remap aliases: \le → \leq, etc.
+  if (MATHQUILL_COMMAND_ALIASES[name]) {
+    name = MATHQUILL_COMMAND_ALIASES[name];
+  }
+
+  // Unicode substitution: command not supported by Google Docs — type Unicode directly
+  if (MATHQUILL_UNICODE_SUBSTITUTIONS[name]) {
+    const map = MATHQUILL_UNICODE_SUBSTITUTIONS[name];
+    let arg = '';
+    if (text[i] === '{') {
+      i++; // skip {
+      while (i < text.length && text[i] !== '}') arg += text[i++];
+      if (i < text.length) i++; // skip }
+    } else if (i < text.length) {
+      arg = text[i++];
+    }
+    const unicode = map[arg];
+    if (unicode) {
+      await typeSingleChar(unicode);
+    } else {
+      // No mapping found — type the arg as-is
+      for (const c of arg) await typeSingleChar(c);
+    }
+    return i;
+  }
+
+  // No-arg symbol: type Unicode directly — no need to go through MathQuill's command system
+  if (MATHQUILL_SYMBOL_MAP[name]) {
+    await typeSingleChar(MATHQUILL_SYMBOL_MAP[name]);
+    return i;
+  }
+
+  // Type backslash + command name via keydown+keypress only so MathQuill's command
+  // buffer is built through its normal keyboard pipeline (input events bypass it)
+  await typeCommandSequence('\\' + name);
+
+  if (MATHQUILL_BOX_COMMANDS.has(name)) {
+    // Space (keydown+keypress) triggers MathQuill command conversion
+    await typeCommandSequence(' ');
+    await sleep(50);
+    if (text[i] === '{') {
+      i++;
+      i = await typeEquationContent(text, i, '}');
+      if (i < text.length) i++;
+    } else {
+      i = await typeEquationToken(text, i);
+    }
+    dispatchKey('ArrowRight', { code: 'ArrowRight', keyCode: 39 });
+    await sleep(30);
+    return i;
+  }
+
+  if (MATHQUILL_FONT_COMMANDS.has(name)) {
+    await typeCommandSequence(' ');
+    await sleep(50);
+    if (text[i] === '{') {
+      i++;
+      i = await typeEquationContent(text, i, '}');
+      if (i < text.length) i++;
+    } else {
+      i = await typeEquationToken(text, i);
+    }
+    // No ArrowRight — font commands don't create a box to exit
+    return i;
+  }
+
+  if (MATHQUILL_TWO_ARG_COMMANDS.has(name)) {
+    await typeCommandSequence(' ');
+    await sleep(50);
+    // First argument
+    if (text[i] === '{') {
+      i++;
+      i = await typeEquationContent(text, i, '}');
+      if (i < text.length) i++;
+    } else {
+      i = await typeEquationToken(text, i);
+    }
+    dispatchKey('ArrowRight', { code: 'ArrowRight', keyCode: 39 });
+    await sleep(30);
+    // Second argument
+    if (text[i] === '{') {
+      i++;
+      i = await typeEquationContent(text, i, '}');
+      if (i < text.length) i++;
+    } else {
+      i = await typeEquationToken(text, i);
+    }
+    dispatchKey('ArrowRight', { code: 'ArrowRight', keyCode: 39 });
+    await sleep(30);
+    return i;
+  }
+
+  // Unknown no-arg command: \cmdname was already typed, leave as-is
+  return i;
 }
 
 /**

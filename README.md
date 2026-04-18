@@ -14,8 +14,9 @@ Add **Alt+=** keyboard shortcut to Google Docs for inserting equations, matching
 - **Supported Apps:** Google Docs
 - **Features:**
   - Instant equation insertion with Alt+=
+  - Converts selected `$...$` / `$$...$$` LaTeX text into native equations
   - Auto-shows toolbar if hidden
-  - Minimal permissions (Google Docs only)
+  - Minimal permissions (Google Docs + clipboard)
 
 [📖 Read more →](./equation-shortcut/README.md)
 
