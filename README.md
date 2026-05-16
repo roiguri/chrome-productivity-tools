@@ -73,6 +73,23 @@ Pick any element on the page and toggle its text direction (RTL/LTR) with a clic
 
 ---
 
+### Peer Share
+📁 [`peer-share/`](./peer-share/)
+
+Send a screenshot of the current tab, a file, or pasted text straight to a paired peer's browser — they get a notification and the item lands in their extension Inbox.
+
+- **Status:** ✅ Ready (requires one-time Firebase setup)
+- **Version:** 1.0.0
+- **Features:**
+  - Screenshot / file / text sharing to a specific peer
+  - True push delivery via `chrome.gcm` + a Firebase Cloud Function
+  - Anonymous pairing-code identity (no accounts)
+  - User-provisioned Firebase relay — no other backend
+
+[📖 Read more →](./peer-share/README.md)
+
+---
+
 ## Installation
 
 Each extension is self-contained in its own directory. To install:
@@ -95,6 +112,7 @@ chrome-productivity-tools/
 ├── autofill/             # Form auto-fill extension
 ├── gibberish-fixer/       # Hebrew-English Text Swapper extension
 ├── direction-switcher/    # Text Direction (RTL/LTR) toggler
+├── peer-share/            # Screenshot/file/text peer sharing extension
 └── README.md             # This file
 ```
 
