@@ -18,7 +18,9 @@ importScripts('firebase-config.js', 'firebase.js');
   var INBOX_KEY = 'ps_inbox';
   var SETTINGS_KEY = 'ps_settings';
   var GCM_TOKEN_KEY = 'ps_gcm_token';
+  var GCM_PUBLISHED_KEY = 'ps_gcm_published'; // { uid, token }
   var RECONCILE_ALARM = 'ps-reconcile';
+  var REGISTER_ALARM = 'ps-register-retry';
   var DEFAULT_RETENTION = 50;
 
   function storageGet(keys) {
@@ -71,6 +73,10 @@ importScripts('firebase-config.js', 'firebase.js');
 
   // ---- gcm registration -----------------------------------------------------
 
+  function sleep(ms) {
+    return new Promise(function (r) { setTimeout(r, ms); });
+  }
+
   function gcmRegister(senderId) {
     return new Promise(function (resolve, reject) {
       chrome.gcm.register([senderId], function (registrationId) {
@@ -83,29 +89,90 @@ importScripts('firebase-config.js', 'firebase.js');
     });
   }
 
-  async function ensureRegistered() {
-    if (!FB.isConfigured()) return;
+  // chrome.gcm.register is flaky on a cold service worker — it commonly
+  // rejects with "Asynchronous operation is pending" (a prior registration
+  // from an earlier worker lifetime is still settling). A single attempt
+  // therefore frequently fails, and without a retry the recipient never
+  // publishes a token, so the Cloud Function can never push to them. Retry
+  // with backoff across a few attempts; the REGISTER_ALARM is the durable
+  // backstop that survives worker eviction.
+  async function acquireToken(senderId) {
+    var delays = [0, 3000, 8000, 15000];
+    var lastErr;
+    for (var i = 0; i < delays.length; i++) {
+      if (delays[i]) await sleep(delays[i]);
+      try {
+        var t = await gcmRegister(senderId);
+        if (t) return t;
+        lastErr = new Error('empty registration id');
+      } catch (e) {
+        lastErr = e;
+        console.warn('[Peer Share] gcm register attempt ' + (i + 1) +
+          ' failed: ' + e.message);
+      }
+    }
+    throw lastErr || new Error('gcm registration failed');
+  }
+
+  async function alreadyPublished(uid, token) {
+    var p = (await storageGet([GCM_PUBLISHED_KEY]))[GCM_PUBLISHED_KEY];
+    return !!p && p.uid === uid && p.token === token;
+  }
+
+  // Returns true only once the recipient's token is confirmed written to
+  // users/{uid}. Token acquisition and the Firestore publish are decoupled
+  // so a failed publish still gets retried even when the token is unchanged.
+  async function doEnsureRegistered() {
+    if (!FB.isConfigured()) return false;
     try {
       var senderId = self.FIREBASE_CONFIG.messagingSenderId;
-      var token = await gcmRegister(senderId);
-      var prev = (await storageGet([GCM_TOKEN_KEY]))[GCM_TOKEN_KEY];
       var uid = await FB.getUid();
-      if (token && token !== prev) {
-        await FB.firestoreSet('users/' + uid, {
-          gcmToken: token,
-          updatedAt: Date.now()
-        });
-        await storageSet({ ps_gcm_token: token });
-      } else if (token) {
-        // Token unchanged but make sure the user doc exists.
-        await FB.firestoreSet('users/' + uid, {
-          gcmToken: token,
-          updatedAt: Date.now()
-        });
-      }
+      var token = await acquireToken(senderId);
+      if (await alreadyPublished(uid, token)) return true;
+      await FB.firestoreSet('users/' + uid, {
+        gcmToken: token,
+        updatedAt: Date.now()
+      });
+      await storageSet({
+        ps_gcm_token: token,
+        ps_gcm_published: { uid: uid, token: token }
+      });
+      console.log('[Peer Share] push registration published for', uid);
+      return true;
     } catch (e) {
       console.warn('[Peer Share] gcm registration failed:', e.message);
+      return false;
     }
+  }
+
+  // Serialize registration: init() can run several times concurrently
+  // (module load + onInstalled/onStartup), and overlapping chrome.gcm.register
+  // calls fail with "Asynchronous operation is pending."
+  var registerInFlight = null;
+
+  function ensureRegistered() {
+    if (registerInFlight) return registerInFlight;
+    registerInFlight = doEnsureRegistered().then(
+      function (ok) { registerInFlight = null; return ok; },
+      function () { registerInFlight = null; return false; }
+    );
+    return registerInFlight;
+  }
+
+  // Register, and if it didn't succeed, schedule a self-healing retry alarm
+  // that keeps trying (and survives worker eviction) until it does. Clears
+  // the alarm once the token is confirmed published.
+  async function ensureRegisteredWithBackstop() {
+    var ok = await ensureRegistered();
+    if (ok) {
+      chrome.alarms.clear(REGISTER_ALARM);
+    } else {
+      chrome.alarms.create(REGISTER_ALARM, {
+        delayInMinutes: 1,
+        periodInMinutes: 1
+      });
+    }
+    return ok;
   }
 
   // ---- message ingestion ----------------------------------------------------
@@ -204,7 +271,7 @@ importScripts('firebase-config.js', 'firebase.js');
     } catch (e) {
       console.warn('[Peer Share] sign-in failed:', e.message);
     }
-    await ensureRegistered();
+    await ensureRegisteredWithBackstop();
     chrome.alarms.create(RECONCILE_ALARM, { periodInMinutes: 30 });
     await reconcile();
     await updateBadge();
@@ -229,6 +296,27 @@ importScripts('firebase-config.js', 'firebase.js');
 
   chrome.alarms.onAlarm.addListener(function (alarm) {
     if (alarm.name === RECONCILE_ALARM) reconcile();
+    else if (alarm.name === REGISTER_ALARM) ensureRegisteredWithBackstop();
+  });
+
+  // Lets the options page show push-registration status and trigger a
+  // manual retry — gives the recipient a deterministic way to repair
+  // registration without waiting for the next alarm tick.
+  chrome.runtime.onMessage.addListener(function (req, sender, sendResponse) {
+    if (!req || !req.type) return;
+    if (req.type === 'ps-push-status') {
+      storageGet([GCM_PUBLISHED_KEY]).then(function (s) {
+        var p = s[GCM_PUBLISHED_KEY];
+        sendResponse({ registered: !!(p && p.token) });
+      });
+      return true;
+    }
+    if (req.type === 'ps-retry-push') {
+      ensureRegisteredWithBackstop().then(function (ok) {
+        sendResponse({ registered: ok });
+      });
+      return true;
+    }
   });
 
   chrome.storage.onChanged.addListener(function (changes, area) {

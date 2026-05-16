@@ -3,7 +3,7 @@
   "description": "Peer Share push relay Cloud Function",
   "private": true,
   "engines": {
-    "node": "20"
+    "node": "22"
   },
   "main": "index.js",
   "dependencies": {

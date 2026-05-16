@@ -27,6 +27,17 @@
         config, then reload the extension. See the README for the full setup
         (including deploying the push Cloud Function).
       </p>
+      <div class="section-header" style="margin-top:12px;">
+        <h2>Push notifications</h2>
+        <span id="pushStatus" class="config-status bad">Checking…</span>
+      </div>
+      <p class="help-text">
+        Required to receive items in the background. If this stays
+        <em>Not registered</em>, click Retry; registration also retries
+        automatically every minute until it succeeds.
+      </p>
+      <button class="btn btn-secondary btn-small" id="retryPushBtn"
+              style="margin-top:8px;">Retry registration</button>
     </section>
 
     <!-- My pairing code -->

@@ -270,7 +270,7 @@
 
   // ---- Storage --------------------------------------------------------------
 
-  function storageObjectUrl(path) {
+  function storageObjectUrl() {
     return 'https://firebasestorage.googleapis.com/v0/b/' +
       encodeURIComponent(cfg().storageBucket) + '/o';
   }

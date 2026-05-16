@@ -55,7 +55,7 @@ it. At this volume it is effectively free, but a billing account must exist.
    npm install -g firebase-tools
    firebase login
    firebase use --add          # pick the project you created
-   firebase deploy --only functions,firestore:rules,storage:rules
+   firebase deploy --only functions,firestore:rules,storage
    ```
    `firebase.json`, `functions/`, `firestore.rules`, and `storage.rules` are
    all included in this folder.

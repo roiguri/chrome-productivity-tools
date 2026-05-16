@@ -9,6 +9,8 @@
   var el = {
     status: document.getElementById('status'),
     fbStatus: document.getElementById('fbStatus'),
+    pushStatus: document.getElementById('pushStatus'),
+    retryPushBtn: document.getElementById('retryPushBtn'),
     myCode: document.getElementById('myCode'),
     copyCodeBtn: document.getElementById('copyCodeBtn'),
     addPeerBtn: document.getElementById('addPeerBtn'),
@@ -80,6 +82,50 @@
       el.myCode.textContent = '(sign-in failed: ' + e.message + ')';
     }
   }
+
+  function setPushStatus(registered) {
+    if (registered) {
+      el.pushStatus.textContent = 'Registered';
+      el.pushStatus.className = 'config-status ok';
+    } else {
+      el.pushStatus.textContent = 'Not registered';
+      el.pushStatus.className = 'config-status bad';
+    }
+  }
+
+  function refreshPushStatus() {
+    if (!FB.isConfigured()) {
+      el.pushStatus.textContent = 'Unavailable';
+      el.pushStatus.className = 'config-status bad';
+      return;
+    }
+    chrome.runtime.sendMessage({ type: 'ps-push-status' }, function (resp) {
+      if (chrome.runtime.lastError || !resp) {
+        setPushStatus(false);
+        return;
+      }
+      setPushStatus(resp.registered);
+    });
+  }
+
+  el.retryPushBtn.addEventListener('click', function () {
+    el.pushStatus.textContent = 'Registering…';
+    el.pushStatus.className = 'config-status';
+    chrome.runtime.sendMessage({ type: 'ps-retry-push' }, function (resp) {
+      if (chrome.runtime.lastError || !resp) {
+        setPushStatus(false);
+        showStatus('Could not reach the background worker.', 'error');
+        return;
+      }
+      setPushStatus(resp.registered);
+      showStatus(
+        resp.registered
+          ? 'Push registration succeeded.'
+          : 'Still not registered — it will keep retrying automatically.',
+        resp.registered ? 'success' : 'error'
+      );
+    });
+  });
 
   el.copyCodeBtn.addEventListener('click', function () {
     var code = el.myCode.textContent || '';
@@ -203,6 +249,7 @@
   el.clearInboxBtn.addEventListener('click', clearInbox);
 
   refreshFirebaseStatus();
+  refreshPushStatus();
   loadPeers();
   loadSettings();
 })();
