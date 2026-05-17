@@ -78,11 +78,24 @@
   function openMediaDb() {
     if (mediaDb) return Promise.resolve(mediaDb);
     return new Promise(function (resolve, reject) {
-      var req = indexedDB.open('peer-share-media', 1);
+      var req = indexedDB.open('peer-share-media', 2);
       req.onupgradeneeded = function (e) {
-        e.target.result.createObjectStore('blobs');
+        var db = e.target.result;
+        if (!db.objectStoreNames.contains('blobs')) {
+          db.createObjectStore('blobs');
+        }
+        if (!db.objectStoreNames.contains('draft')) {
+          db.createObjectStore('draft');
+        }
       };
-      req.onsuccess = function (e) { mediaDb = e.target.result; resolve(mediaDb); };
+      req.onsuccess = function (e) {
+        mediaDb = e.target.result;
+        mediaDb.onversionchange = function () {
+          mediaDb.close();
+          mediaDb = null;
+        };
+        resolve(mediaDb);
+      };
       req.onerror = function (e) { reject(e.target.error); };
     });
   }
@@ -96,6 +109,72 @@
         r.onerror = function (e) { reject(e.target.error); };
       });
     });
+  }
+
+  // ---- draft persistence (survives popup close, not browser restart) -------
+  // Light fields go in chrome.storage.session (auto-cleared on browser
+  // close). Attachment blobs go in the IDB 'draft' store (cleared by the
+  // service worker on chrome.runtime.onStartup).
+
+  function sessionGet(keys) {
+    return new Promise(function (resolve) {
+      chrome.storage.session.get(keys, resolve);
+    });
+  }
+
+  function sessionSet(obj) {
+    return new Promise(function (resolve) {
+      chrome.storage.session.set(obj, resolve);
+    });
+  }
+
+  function saveDraftTray() {
+    return openMediaDb().then(function (db) {
+      return new Promise(function (resolve) {
+        var tx = db.transaction('draft', 'readwrite');
+        tx.objectStore('draft').put(tray.map(function (t) {
+          return {
+            kind: t.kind, blob: t.blob,
+            fileName: t.fileName, mimeType: t.mimeType
+          };
+        }), 'tray');
+        tx.oncomplete = function () { resolve(); };
+        tx.onerror = function () { resolve(); };
+      });
+    }).catch(function () {});
+  }
+
+  function loadDraftTray() {
+    return openMediaDb().then(function (db) {
+      return new Promise(function (resolve) {
+        var tx = db.transaction('draft', 'readonly');
+        var r = tx.objectStore('draft').get('tray');
+        r.onsuccess = function (e) { resolve(e.target.result || []); };
+        r.onerror = function () { resolve([]); };
+      });
+    }).catch(function () { return []; });
+  }
+
+  function saveDraftLight() {
+    return sessionSet({
+      ps_draft: {
+        text: el.textInput.value,
+        peerCode: el.peerSelect.value || '',
+        tab: el.inboxView.style.display !== 'none' ? 'inbox' : 'send'
+      }
+    });
+  }
+
+  function clearDraft() {
+    chrome.storage.session.remove('ps_draft');
+    return openMediaDb().then(function (db) {
+      return new Promise(function (resolve) {
+        var tx = db.transaction('draft', 'readwrite');
+        tx.objectStore('draft').delete('tray');
+        tx.oncomplete = function () { resolve(); };
+        tx.onerror = function () { resolve(); };
+      });
+    }).catch(function () {});
   }
 
   var objectUrls = [];
@@ -130,6 +209,7 @@
     el.sendView.style.display = send ? 'block' : 'none';
     el.inboxView.style.display = send ? 'none' : 'block';
     if (!send) renderInbox();
+    saveDraftLight();
   }
 
   // ---- staging tray ---------------------------------------------------------
@@ -146,16 +226,19 @@
       mimeType: mimeType || 'application/octet-stream'
     });
     renderTray();
+    saveDraftTray();
   }
 
   function removeTrayItem(i) {
     tray.splice(i, 1);
     renderTray();
+    saveDraftTray();
   }
 
   function clearTray() {
     tray = [];
     renderTray();
+    saveDraftTray();
   }
 
   function updateSendLabel() {
@@ -283,8 +366,49 @@
     if (added) e.preventDefault();
   });
 
-  el.textInput.addEventListener('input', updateSendLabel);
+  el.textInput.addEventListener('input', function () {
+    updateSendLabel();
+    saveDraftLight();
+  });
+  el.peerSelect.addEventListener('change', saveDraftLight);
   el.clearTrayBtn.addEventListener('click', clearTray);
+  window.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'hidden') {
+      saveDraftLight();
+      saveDraftTray();
+    }
+  });
+  window.addEventListener('pagehide', function () {
+    saveDraftLight();
+    saveDraftTray();
+  });
+
+  // Restore a draft (text/peer/tab from session, attachments from IDB).
+  // Called after loadPeers() has populated the peer <select>.
+  async function restoreDraft() {
+    var d = (await sessionGet(['ps_draft'])).ps_draft;
+    if (d) {
+      if (d.text) el.textInput.value = d.text;
+      if (d.peerCode) {
+        var opts = el.peerSelect.options;
+        for (var i = 0; i < opts.length; i++) {
+          if (opts[i].value === d.peerCode) { el.peerSelect.value = d.peerCode; break; }
+        }
+      }
+      if (d.tab === 'inbox') switchTab('inbox');
+    }
+    var saved = await loadDraftTray();
+    if (saved && saved.length) {
+      tray = saved.map(function (t) {
+        return {
+          kind: t.kind, blob: t.blob,
+          fileName: t.fileName, mimeType: t.mimeType
+        };
+      });
+      renderTray();
+    }
+    updateSendLabel();
+  }
 
   // ---- peers ----------------------------------------------------------------
 
@@ -383,13 +507,17 @@
       showStatus('Sent ' + sentCount +
         (sentCount === 1 ? ' item!' : ' items!'), 'success');
       el.textInput.value = '';
-      clearTray();
+      tray = [];
+      renderTray();
+      clearDraft();
     } else {
       // Keep only what failed so the user can retry it.
       tray = failed.filter(function (f) { return f.kind !== 'text'; });
       var textFailed = failed.some(function (f) { return f.kind === 'text'; });
       if (!textFailed) el.textInput.value = '';
       renderTray();
+      saveDraftTray();
+      saveDraftLight();
       showStatus(sentCount + ' sent, ' + failed.length +
         ' failed — still staged, try again.', 'error');
     }
@@ -568,7 +696,7 @@
     });
   }
 
-  loadPeers();
   renderTray();
+  loadPeers().then(restoreDraft);
   updateInboxBadge();
 })();

@@ -63,13 +63,39 @@ importScripts('firebase-config.js', 'firebase.js');
   function openMediaDb() {
     if (mediaDb) return Promise.resolve(mediaDb);
     return new Promise(function (resolve, reject) {
-      var req = indexedDB.open('peer-share-media', 1);
+      var req = indexedDB.open('peer-share-media', 2);
       req.onupgradeneeded = function (e) {
-        e.target.result.createObjectStore('blobs');
+        var db = e.target.result;
+        if (!db.objectStoreNames.contains('blobs')) {
+          db.createObjectStore('blobs');
+        }
+        if (!db.objectStoreNames.contains('draft')) {
+          db.createObjectStore('draft');
+        }
       };
-      req.onsuccess = function (e) { mediaDb = e.target.result; resolve(mediaDb); };
+      req.onsuccess = function (e) {
+        mediaDb = e.target.result;
+        mediaDb.onversionchange = function () {
+          mediaDb.close();
+          mediaDb = null;
+        };
+        resolve(mediaDb);
+      };
       req.onerror = function (e) { reject(e.target.error); };
     });
+  }
+
+  // Drafts must not survive a browser restart: clear the draft store when
+  // the browser starts a new session.
+  function clearDraftStore() {
+    return openMediaDb().then(function (db) {
+      return new Promise(function (resolve) {
+        var tx = db.transaction('draft', 'readwrite');
+        tx.objectStore('draft').clear();
+        tx.oncomplete = function () { resolve(); };
+        tx.onerror = function () { resolve(); };
+      });
+    }).catch(function () {});
   }
 
   function storeMediaBlob(id, blob) {
@@ -266,6 +292,7 @@ importScripts('firebase-config.js', 'firebase.js');
   });
 
   chrome.runtime.onStartup.addListener(function () {
+    clearDraftStore();
     init(false);
   });
 
