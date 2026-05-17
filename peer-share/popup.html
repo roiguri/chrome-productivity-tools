@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Peer Share</title>
+  <style>
+    body {
+      width: 360px;
+      padding: 0;
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+      font-size: 14px;
+      background: white;
+      color: #333;
+    }
+
+    .header {
+      background: linear-gradient(135deg, #2af598 0%, #009efd 100%);
+      color: white;
+      padding: 20px;
+      text-align: center;
+    }
+
+    h1 { font-size: 18px; margin: 0 0 4px 0; }
+    .subtitle { font-size: 12px; opacity: 0.9; }
+
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid #e0e0e0;
+    }
+
+    .tab {
+      flex: 1;
+      padding: 12px;
+      text-align: center;
+      cursor: pointer;
+      font-weight: 500;
+      color: #6c757d;
+      background: #fafafa;
+      border: none;
+      font-size: 13px;
+    }
+
+    .tab.active {
+      color: #009efd;
+      background: white;
+      box-shadow: inset 0 -2px 0 #009efd;
+    }
+
+    .content { padding: 15px; }
+
+    .status {
+      padding: 10px;
+      border-radius: 4px;
+      margin-bottom: 10px;
+      font-size: 13px;
+      display: none;
+    }
+    .status.success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+    .status.error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+    .status.info { background: #e2e3e5; color: #383d41; border: 1px solid #d6d8db; }
+
+    .btn-block {
+      width: 100%;
+      margin-top: 10px;
+    }
+    .shot-label {
+      margin: 12px 0 6px;
+      font-weight: 500;
+      color: #495057;
+      font-size: 13px;
+    }
+    .shot-row {
+      display: flex;
+      gap: 8px;
+    }
+    .btn-ghost {
+      flex: 1 1 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 38px;
+      padding: 0 8px;
+      border: 1px solid #dee2e6;
+      background: #f1f3f5;
+      color: #495057;
+      border-radius: 6px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 500;
+      line-height: 1;
+      text-align: center;
+      box-sizing: border-box;
+      -webkit-appearance: none;
+      appearance: none;
+      margin: 0;
+    }
+    .btn-ghost:hover { background: #e9ecef; }
+    .btn-ghost:disabled { opacity: .55; cursor: not-allowed; }
+
+    .tray {
+      margin-top: 12px;
+      border: 1px solid #e0e0e0;
+      border-radius: 6px;
+      background: #fafafa;
+      padding: 8px;
+    }
+    .tray-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+      color: #6c757d;
+      margin-bottom: 6px;
+    }
+    .tray-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px;
+      background: white;
+      border: 1px solid #e9ecef;
+      border-radius: 5px;
+      margin-bottom: 6px;
+    }
+    .tray-item:last-child { margin-bottom: 0; }
+    .tray-thumb {
+      width: 34px;
+      height: 34px;
+      flex: none;
+      border-radius: 4px;
+      object-fit: cover;
+      border: 1px solid #e0e0e0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      background: #f1f3f5;
+    }
+    .tray-name {
+      flex: 1;
+      min-width: 0;
+      font-size: 12px;
+      color: #343a40;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .tray-size { font-size: 11px; color: #868e96; flex: none; }
+    .tray-x {
+      flex: none;
+      cursor: pointer;
+      color: #adb5bd;
+      font-size: 16px;
+      line-height: 1;
+      padding: 2px 4px;
+    }
+    .tray-x:hover { color: #e03131; }
+
+    label {
+      display: block;
+      margin: 10px 0 6px;
+      font-weight: 500;
+      color: #495057;
+      font-size: 13px;
+    }
+
+    select, textarea, input[type="file"] {
+      width: 100%;
+      padding: 9px 10px;
+      border: 1px solid #ced4da;
+      border-radius: 4px;
+      font-size: 13px;
+      font-family: inherit;
+      box-sizing: border-box;
+    }
+    textarea { resize: vertical; min-height: 70px; }
+
+    .preview {
+      margin-top: 10px;
+      text-align: center;
+    }
+    .preview img {
+      max-width: 100%;
+      max-height: 160px;
+      border: 1px solid #e0e0e0;
+      border-radius: 6px;
+    }
+    .preview .filemeta {
+      font-size: 12px;
+      color: #6c757d;
+      word-break: break-all;
+    }
+
+    button.action {
+      width: 100%;
+      padding: 12px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      margin-top: 14px;
+    }
+    .btn-primary { background: #009efd; color: white; }
+    .btn-primary:hover { background: #0088d9; }
+    .btn-primary:disabled { background: #9bd2f5; cursor: not-allowed; }
+
+    .empty-state {
+      text-align: center;
+      padding: 30px 20px;
+      color: #6c757d;
+    }
+    .empty-state-icon { font-size: 40px; margin-bottom: 8px; }
+    .empty-state-text { font-size: 13px; line-height: 1.5; }
+
+    .inbox-item {
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 10px;
+      background: #fafafa;
+    }
+    .inbox-item.unread { border-color: #009efd; background: #f0f9ff; }
+    .inbox-meta {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      color: #6c757d;
+      margin-bottom: 6px;
+    }
+    .inbox-caption { font-size: 12px; color: #495057; margin-bottom: 8px; }
+    .inbox-text {
+      white-space: pre-wrap;
+      word-break: break-word;
+      background: white;
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+      padding: 8px;
+      font-size: 13px;
+      max-height: 120px;
+      overflow: auto;
+      text-align: start;
+    }
+    .inbox-item img {
+      max-width: 100%;
+      max-height: 140px;
+      border-radius: 4px;
+      border: 1px solid #e0e0e0;
+    }
+    .inbox-media {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 40px;
+    }
+    .inbox-loading {
+      font-size: 12px;
+      color: #888;
+      font-style: italic;
+    }
+    .inbox-actions { display: flex; gap: 8px; margin-top: 8px; }
+    .inbox-actions button {
+      flex: 1;
+      padding: 7px;
+      border: 1px solid #dee2e6;
+      background: #e9ecef;
+      color: #495057;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    .inbox-actions .danger { color: #dc3545; border-color: #f1b0b7; background: #fff; }
+
+    .req-card { border-color: #009efd; background: #f0f9ff; }
+    .req-title { font-weight: 600; font-size: 13px; margin-bottom: 4px; }
+    .req-code {
+      font-size: 11px; color: #6c757d; word-break: break-all;
+      margin-bottom: 8px;
+    }
+    .req-input {
+      width: 100%; padding: 7px 8px; border: 1px solid #ced4da;
+      border-radius: 4px; font-size: 12px; font-family: inherit;
+      box-sizing: border-box; margin-bottom: 8px;
+    }
+
+    .link {
+      color: #009efd;
+      cursor: pointer;
+      text-decoration: underline;
+      font-size: 12px;
+    }
+
+    .footer {
+      padding: 12px;
+      background: #fafafa;
+      border-top: 1px solid #e0e0e0;
+      font-size: 11px;
+      color: #6c757d;
+      text-align: center;
+    }
+
+    .lightbox {
+      position: fixed;
+      inset: 0;
+      z-index: 2147483647;
+      background: rgba(0, 0, 0, 0.88);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      box-sizing: border-box;
+    }
+    .lightbox img {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+      border-radius: 4px;
+    }
+    .lightbox-close {
+      position: fixed;
+      top: 8px;
+      right: 10px;
+      width: 30px;
+      height: 30px;
+      border: none;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.15);
+      color: #fff;
+      font-size: 15px;
+      line-height: 1;
+      cursor: pointer;
+    }
+    .lightbox-close:hover { background: rgba(255, 255, 255, 0.3); }
+    .clickable-img { cursor: zoom-in; }
+
+    .img-skel {
+      width: 100%;
+      height: 120px;
+      border-radius: 4px;
+      background: linear-gradient(90deg,
+        #eef1f4 25%, #e2e6ea 37%, #eef1f4 63%);
+      background-size: 400% 100%;
+      animation: ps-shimmer 1.3s ease-in-out infinite;
+    }
+    @keyframes ps-shimmer {
+      0% { background-position: 100% 0; }
+      100% { background-position: 0 0; }
+    }
+    .btn-retry {
+      padding: 6px 14px;
+      border: 1px solid #ced4da;
+      background: #fff;
+      color: #495057;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    .btn-retry:hover { background: #f1f3f5; }
+    .inbox-pending {
+      font-size: 12px;
+      color: #6c757d;
+      padding: 4px 0;
+    }
+    .inbox-item.pending-del { opacity: 0.7; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Peer Share</h1>
+    <div class="subtitle">Send a screenshot, file, or text to a peer</div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" id="tabSend">Send</button>
+    <button class="tab" id="tabInbox">Inbox <span id="inboxBadge"></span></button>
+  </div>
+
+  <div class="content">
+    <div class="status" id="status"></div>
+
+    <!-- SEND VIEW -->
+    <div id="sendView">
+      <div id="notConfigured" style="display:none;">
+        <div class="empty-state">
+          <div class="empty-state-icon">⚙️</div>
+          <div class="empty-state-text">
+            Firebase isn't configured yet.<br>
+            Edit <code>firebase-config.js</code>, then reload the extension.
+          </div>
+        </div>
+      </div>
+
+      <div id="sendForm">
+        <label for="peerSelect">Send to peer</label>
+        <select id="peerSelect"></select>
+        <div id="noPeers" style="display:none; margin-top:6px;">
+          <span class="link" id="openOptionsLink">No peers yet — add one in Options</span>
+        </div>
+
+        <button class="action btn-primary" id="sendBtn" disabled>Send</button>
+
+        <label for="textInput">Message</label>
+        <textarea id="textInput" dir="auto"
+          placeholder="Type or paste text — or paste an image"></textarea>
+
+        <label class="btn-ghost btn-block" for="fileInput">Attach files</label>
+        <input type="file" id="fileInput" multiple hidden>
+
+        <div class="shot-label">Take a screenshot</div>
+        <div class="shot-row">
+          <button type="button" class="btn-ghost" id="captureFullBtn">Full tab</button>
+          <button type="button" class="btn-ghost" id="captureRegionBtn">Selection</button>
+        </div>
+
+        <div class="tray" id="tray" style="display:none;">
+          <div class="tray-head">
+            <span id="trayCount">0 attachments</span>
+            <span class="link" id="clearTrayBtn">Clear all</span>
+          </div>
+          <div id="trayList"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- INBOX VIEW -->
+    <div id="inboxView" style="display:none;">
+      <div id="inboxRequests"></div>
+      <div id="inboxList"></div>
+    </div>
+  </div>
+
+  <div class="footer" id="footer">Your pairing code is in Options</div>
+
+  <div id="lightbox" class="lightbox" style="display:none;">
+    <button id="lightboxClose" class="lightbox-close" aria-label="Close">✕</button>
+    <img id="lightboxImg" alt="preview">
+  </div>
+
+  <script src="firebase-config.js"></script>
+  <script src="firebase.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

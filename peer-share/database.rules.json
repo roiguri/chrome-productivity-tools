@@ -1,0 +1,18 @@
+{
+  "rules": {
+    "signals": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null"
+      }
+    },
+    "contacts": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        "$from": {
+          ".write": "auth != null && (auth.uid === $from || auth.uid === $uid)"
+        }
+      }
+    }
+  }
+}

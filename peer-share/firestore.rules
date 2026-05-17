@@ -1,0 +1,16 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Relayed messages. The sender writes; only the addressed recipient
+    // can read it back or mark it delivered.
+    match /messages/{messageId} {
+      allow create: if request.auth != null
+        && request.resource.data.from == request.auth.uid;
+      allow read, update, delete: if request.auth != null
+        && resource.data.to == request.auth.uid;
+    }
+
+  }
+}

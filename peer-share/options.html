@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Peer Share — Options</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Peer Share</h1>
+      <p class="subtitle">Pair with peers and manage delivery settings</p>
+    </header>
+
+    <div id="status" class="status hidden"></div>
+
+    <!-- Firebase status -->
+    <section class="section">
+      <div class="section-header">
+        <h2>Firebase connection</h2>
+        <span id="fbStatus" class="config-status bad">Not configured</span>
+      </div>
+      <p class="help-text" id="fbHelp">
+        Peer Share relays through your own Firebase project. Edit
+        <code class="mono">firebase-config.js</code> with your project's web
+        config, then reload the extension. See the README for the full setup.
+        New items are delivered by polling — instant while the extension is
+        open, within about a minute otherwise.
+      </p>
+    </section>
+
+    <!-- My pairing code -->
+    <section class="section">
+      <div class="section-header">
+        <h2>My pairing code</h2>
+      </div>
+      <p class="help-text">
+        Share this code with a peer so they can send to you. It's your
+        anonymous account id — opaque, not a secret you need to guard, but
+        only people you give it to can message you.
+      </p>
+      <div class="code-box" style="margin-top:12px;">
+        <div class="code-value" id="myCode">…</div>
+        <button class="btn btn-secondary btn-small" id="copyCodeBtn">Copy</button>
+      </div>
+    </section>
+
+    <!-- Peers -->
+    <section class="section">
+      <div class="section-header">
+        <h2>Peers</h2>
+        <button id="addPeerBtn" class="btn btn-primary">+ Add peer</button>
+      </div>
+
+      <div id="peerForm" class="form-card hidden">
+        <h3 id="peerFormTitle">Add peer</h3>
+        <input type="hidden" id="editPeerId" value="">
+        <div class="form-group">
+          <label for="peerNickname">Nickname</label>
+          <input type="text" id="peerNickname" placeholder="e.g. Alex (work)">
+        </div>
+        <div class="form-group">
+          <label for="peerCode">Their pairing code</label>
+          <input type="text" id="peerCode" class="mono"
+                 placeholder="Paste the peer's pairing code">
+        </div>
+        <div class="form-actions">
+          <button id="savePeerBtn" class="btn btn-primary">Save</button>
+          <button id="cancelPeerBtn" class="btn btn-secondary">Cancel</button>
+        </div>
+      </div>
+
+      <div id="peersList" class="items-list">
+        <p class="empty-state">No peers yet. Add one to start sharing.</p>
+      </div>
+
+      <div class="section-header" style="margin-top:18px;">
+        <h2>Pending requests</h2>
+      </div>
+      <p class="help-text">
+        People who added you. Accept to message them back and choose a
+        name to show for them.
+      </p>
+      <div id="pendingList" class="items-list">
+        <p class="empty-state">No pending requests.</p>
+      </div>
+    </section>
+
+    <!-- Settings -->
+    <section class="section">
+      <div class="section-header">
+        <h2>Inbox</h2>
+      </div>
+      <div class="form-group" style="max-width:260px;">
+        <label for="retentionInput">Keep at most (messages)</label>
+        <input type="number" id="retentionInput" min="1" max="500" value="50">
+        <span class="help-text">
+          Older items are dropped once the inbox exceeds this many messages.
+        </span>
+      </div>
+      <div class="form-actions">
+        <button id="saveSettingsBtn" class="btn btn-primary">Save settings</button>
+        <button id="clearInboxBtn" class="btn btn-danger">Clear inbox</button>
+      </div>
+    </section>
+
+    <footer>
+      <p>All paired peers and received items are stored locally in this browser.</p>
+    </footer>
+  </div>
+
+  <script src="firebase-config.js"></script>
+  <script src="firebase.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>
