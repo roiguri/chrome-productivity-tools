@@ -14,25 +14,23 @@
     inboxView: document.getElementById('inboxView'),
     notConfigured: document.getElementById('notConfigured'),
     sendForm: document.getElementById('sendForm'),
-    seg: document.querySelector('.seg'),
-    modeScreenshot: document.getElementById('modeScreenshot'),
-    modeFile: document.getElementById('modeFile'),
-    modeText: document.getElementById('modeText'),
     captureBtn: document.getElementById('captureBtn'),
-    screenshotPreview: document.getElementById('screenshotPreview'),
     fileInput: document.getElementById('fileInput'),
-    filePreview: document.getElementById('filePreview'),
     textInput: document.getElementById('textInput'),
     peerSelect: document.getElementById('peerSelect'),
     noPeers: document.getElementById('noPeers'),
     openOptionsLink: document.getElementById('openOptionsLink'),
-    captionInput: document.getElementById('captionInput'),
+    tray: document.getElementById('tray'),
+    trayList: document.getElementById('trayList'),
+    trayCount: document.getElementById('trayCount'),
+    clearTrayBtn: document.getElementById('clearTrayBtn'),
     sendBtn: document.getElementById('sendBtn'),
     inboxList: document.getElementById('inboxList')
   };
 
-  var mode = 'screenshot';
-  var screenshotBlob = null;
+  // Staged attachments: { kind:'image'|'file', blob, fileName, mimeType }.
+  // Typed text in #textInput is a separate (optional) item at send time.
+  var tray = [];
   var statusTimer = null;
 
   function showStatus(message, type) {
@@ -134,14 +132,100 @@
     if (!send) renderInbox();
   }
 
-  function setMode(m) {
-    mode = m;
-    Array.prototype.forEach.call(el.seg.children, function (b) {
-      b.classList.toggle('active', b.dataset.mode === m);
+  // ---- staging tray ---------------------------------------------------------
+
+  function kindOf(mimeType) {
+    return mimeType && mimeType.indexOf('image/') === 0 ? 'image' : 'file';
+  }
+
+  function addToTray(blob, fileName, mimeType) {
+    tray.push({
+      kind: kindOf(mimeType),
+      blob: blob,
+      fileName: fileName,
+      mimeType: mimeType || 'application/octet-stream'
     });
-    el.modeScreenshot.style.display = m === 'screenshot' ? 'block' : 'none';
-    el.modeFile.style.display = m === 'file' ? 'block' : 'none';
-    el.modeText.style.display = m === 'text' ? 'block' : 'none';
+    renderTray();
+  }
+
+  function removeTrayItem(i) {
+    tray.splice(i, 1);
+    renderTray();
+  }
+
+  function clearTray() {
+    tray = [];
+    renderTray();
+  }
+
+  function updateSendLabel() {
+    var hasText = el.textInput.value.trim().length > 0;
+    var n = tray.length + (hasText ? 1 : 0);
+    el.sendBtn.textContent = n > 0 ? 'Send (' + n + ')' : 'Send';
+    el.sendBtn.disabled = n === 0;
+  }
+
+  var trayUrls = [];
+
+  function revokeTrayUrls() {
+    trayUrls.forEach(function (u) { URL.revokeObjectURL(u); });
+    trayUrls = [];
+  }
+
+  function renderTray() {
+    revokeTrayUrls();
+    if (!tray.length) {
+      el.tray.style.display = 'none';
+      el.trayList.innerHTML = '';
+      updateSendLabel();
+      return;
+    }
+    el.tray.style.display = 'block';
+    el.trayCount.textContent = tray.length +
+      (tray.length === 1 ? ' attachment' : ' attachments');
+    el.trayList.innerHTML = '';
+    tray.forEach(function (item, idx) {
+      var row = document.createElement('div');
+      row.className = 'tray-item';
+
+      var thumb = document.createElement('div');
+      thumb.className = 'tray-thumb';
+      if (item.kind === 'image') {
+        var url = URL.createObjectURL(item.blob);
+        trayUrls.push(url);
+        var img = document.createElement('img');
+        img.alt = '';
+        img.src = url;
+        img.style.width = '100%';
+        img.style.height = '100%';
+        img.style.objectFit = 'cover';
+        img.style.borderRadius = '4px';
+        thumb.appendChild(img);
+      } else {
+        thumb.textContent = '📄';
+      }
+
+      var name = document.createElement('div');
+      name.className = 'tray-name';
+      name.textContent = item.fileName;
+
+      var size = document.createElement('span');
+      size.className = 'tray-size';
+      size.textContent = Math.max(1, Math.round(item.blob.size / 1024)) + ' KB';
+
+      var x = document.createElement('span');
+      x.className = 'tray-x';
+      x.textContent = '✕';
+      x.title = 'Remove';
+      x.addEventListener('click', function () { removeTrayItem(idx); });
+
+      row.appendChild(thumb);
+      row.appendChild(name);
+      row.appendChild(size);
+      row.appendChild(x);
+      el.trayList.appendChild(row);
+    });
+    updateSendLabel();
   }
 
   // ---- screenshot capture ---------------------------------------------------
@@ -157,15 +241,13 @@
       var canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
       var ctx = canvas.getContext('2d');
       ctx.drawImage(bitmap, 0, 0);
-      screenshotBlob = await canvas.convertToBlob({
+      var jpeg = await canvas.convertToBlob({
         type: 'image/jpeg',
         quality: 0.7
       });
-      var url = URL.createObjectURL(screenshotBlob);
-      el.screenshotPreview.innerHTML = '<img alt="screenshot">';
-      el.screenshotPreview.firstChild.src = url;
-      showStatus('Screenshot captured (' +
-        Math.round(screenshotBlob.size / 1024) + ' KB)', 'info');
+      addToTray(jpeg, 'screenshot-' + Date.now() + '.jpg', 'image/jpeg');
+      showStatus('Screenshot added (' +
+        Math.round(jpeg.size / 1024) + ' KB)', 'info');
     } catch (e) {
       showStatus('Could not capture tab: ' + e.message, 'error');
     } finally {
@@ -174,12 +256,35 @@
   }
 
   el.fileInput.addEventListener('change', function () {
-    var f = el.fileInput.files[0];
-    if (!f) { el.filePreview.innerHTML = ''; return; }
-    el.filePreview.innerHTML =
-      '<div class="filemeta">' + escapeHtml(f.name) + ' — ' +
-      Math.round(f.size / 1024) + ' KB</div>';
+    var files = el.fileInput.files;
+    for (var i = 0; i < files.length; i++) {
+      var f = files[i];
+      addToTray(f, f.name, f.type || 'application/octet-stream');
+    }
+    el.fileInput.value = '';
   });
+
+  // Paste an image/file straight into the composer → goes to the tray.
+  // Plain-text paste falls through to the textarea as normal.
+  el.textInput.addEventListener('paste', function (e) {
+    var items = (e.clipboardData && e.clipboardData.items) || [];
+    var added = false;
+    for (var i = 0; i < items.length; i++) {
+      if (items[i].kind === 'file') {
+        var f = items[i].getAsFile();
+        if (f) {
+          var ext = (f.type.split('/')[1] || 'bin').split('+')[0];
+          var nm = f.name || ('pasted-' + Date.now() + '.' + ext);
+          addToTray(f, nm, f.type || 'application/octet-stream');
+          added = true;
+        }
+      }
+    }
+    if (added) e.preventDefault();
+  });
+
+  el.textInput.addEventListener('input', updateSendLabel);
+  el.clearTrayBtn.addEventListener('click', clearTray);
 
   // ---- peers ----------------------------------------------------------------
 
@@ -203,6 +308,31 @@
 
   // ---- sending --------------------------------------------------------------
 
+  // Send one staged item as its own message. Returns the created doc id.
+  async function sendOne(toCode, item) {
+    var fromUid = await FB.getUid();
+    var doc = {
+      to: toCode,
+      from: fromUid,
+      type: item.kind === 'text' ? 'text' : item.kind,
+      caption: '',
+      ts: Date.now(),
+      delivered: false
+    };
+    if (item.kind === 'text') {
+      doc.text = item.text;
+    } else {
+      var path = 'messages/' + toCode + '/' + Date.now() + '_' +
+        item.fileName.replace(/[^\w.\-]/g, '_');
+      await FB.storageUpload(path, item.blob, item.mimeType);
+      doc.storagePath = path;
+      doc.fileName = item.fileName;
+      doc.mimeType = item.mimeType;
+    }
+    var created = await FB.firestoreCreate('messages', doc);
+    return created && created.id ? created.id : '';
+  }
+
   async function send() {
     if (!FB.isConfigured()) {
       showStatus('Firebase is not configured.', 'error');
@@ -213,89 +343,58 @@
       showStatus('Select a peer first (add one in Options).', 'error');
       return;
     }
-    var caption = el.captionInput.value.trim();
 
-    var payload;
-    try {
-      if (mode === 'text') {
-        var text = el.textInput.value;
-        if (!text.trim()) {
-          showStatus('Nothing to send — type some text.', 'error');
-          return;
-        }
-        payload = { type: 'text', text: text };
-      } else if (mode === 'file') {
-        var f = el.fileInput.files[0];
-        if (!f) {
-          showStatus('Choose a file first.', 'error');
-          return;
-        }
-        payload = {
-          type: 'file',
-          blob: f,
-          fileName: f.name,
-          mimeType: f.type || 'application/octet-stream'
-        };
-      } else {
-        if (!screenshotBlob) {
-          showStatus('Capture the tab first.', 'error');
-          return;
-        }
-        payload = {
-          type: 'image',
-          blob: screenshotBlob,
-          fileName: 'screenshot-' + Date.now() + '.jpg',
-          mimeType: 'image/jpeg'
-        };
-      }
-    } catch (e) {
-      showStatus(e.message, 'error');
+    // Build the queue: typed text (if any) first, then staged attachments.
+    var items = [];
+    var text = el.textInput.value.trim();
+    if (text) items.push({ kind: 'text', text: text });
+    tray.forEach(function (t) { items.push(t); });
+
+    if (!items.length) {
+      showStatus('Nothing to send — type a message or attach a file.',
+        'error');
       return;
     }
 
     el.sendBtn.disabled = true;
-    showStatus('Sending…', 'info');
-    try {
-      var fromUid = await FB.getUid();
-      var doc = {
-        to: toCode,
-        from: fromUid,
-        type: payload.type,
-        caption: caption,
-        ts: Date.now(),
-        delivered: false
-      };
-      if (payload.type === 'text') {
-        doc.text = payload.text;
-      } else {
-        var path = 'messages/' + toCode + '/' + Date.now() + '_' +
-          payload.fileName.replace(/[^\w.\-]/g, '_');
-        await FB.storageUpload(path, payload.blob, payload.mimeType);
-        doc.storagePath = path;
-        doc.fileName = payload.fileName;
-        doc.mimeType = payload.mimeType;
+    var total = items.length;
+    var lastId = '';
+    var failed = [];
+    for (var i = 0; i < items.length; i++) {
+      showStatus('Sending ' + (i + 1) + '/' + total + '…', 'info');
+      try {
+        lastId = await sendOne(toCode, items[i]);
+      } catch (e) {
+        failed.push(items[i]);
       }
-      var created = await FB.firestoreCreate('messages', doc);
-      // Ring the recipient's doorbell for instant delivery. Best-effort —
-      // if RTDB is unconfigured or this fails, their poll still picks it up.
-      if (FB.rtdbEnabled()) {
-        FB.rtdbPut('signals/' + toCode, {
-          id: created && created.id ? created.id : '',
-          ts: Date.now()
-        }).catch(function () {});
-      }
-      showStatus('Sent!', 'success');
-      el.captionInput.value = '';
-      el.textInput.value = '';
-      el.fileInput.value = '';
-      el.filePreview.innerHTML = '';
-      el.screenshotPreview.innerHTML = '';
-      screenshotBlob = null;
-    } catch (e) {
-      showStatus('Send failed: ' + e.message, 'error');
-    } finally {
-      el.sendBtn.disabled = false;
     }
+
+    // One doorbell ring covers the whole batch — reconcile pulls every
+    // undelivered message addressed to the recipient.
+    if (lastId && FB.rtdbEnabled()) {
+      FB.rtdbPut('signals/' + toCode, {
+        id: lastId,
+        ts: Date.now()
+      }).catch(function () {});
+    }
+
+    var sentCount = total - failed.length;
+    if (!failed.length) {
+      showStatus('Sent ' + sentCount +
+        (sentCount === 1 ? ' item!' : ' items!'), 'success');
+      el.textInput.value = '';
+      clearTray();
+    } else {
+      // Keep only what failed so the user can retry it.
+      tray = failed.filter(function (f) { return f.kind !== 'text'; });
+      var textFailed = failed.some(function (f) { return f.kind === 'text'; });
+      if (!textFailed) el.textInput.value = '';
+      renderTray();
+      showStatus(sentCount + ' sent, ' + failed.length +
+        ' failed — still staged, try again.', 'error');
+    }
+    updateSendLabel();
+    el.sendBtn.disabled = false;
   }
 
   // ---- inbox ----------------------------------------------------------------
@@ -425,9 +524,6 @@
 
   el.tabSend.addEventListener('click', function () { switchTab('send'); });
   el.tabInbox.addEventListener('click', function () { switchTab('inbox'); });
-  el.seg.addEventListener('click', function (e) {
-    if (e.target.dataset.mode) setMode(e.target.dataset.mode);
-  });
   el.captureBtn.addEventListener('click', captureScreenshot);
   el.sendBtn.addEventListener('click', send);
   el.openOptionsLink.addEventListener('click', function () {
@@ -468,9 +564,11 @@
       clearInterval(pollTimer);
       if (stopDoorbell) stopDoorbell();
       revokeObjectUrls();
+      revokeTrayUrls();
     });
   }
 
   loadPeers();
+  renderTray();
   updateInboxBadge();
 })();
