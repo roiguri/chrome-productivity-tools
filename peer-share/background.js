@@ -554,10 +554,30 @@ importScripts('firebase-config.js', 'firebase.js');
 
     if (req.type === 'ps-inbox-mark-read') {
       serialInboxWrite(async function () {
+        var except = req.except || [];
         var inbox = (await storageGet([INBOX_KEY]))[INBOX_KEY] || [];
         var changed = false;
         inbox.forEach(function (m) {
-          if (!m.read) { m.read = true; changed = true; }
+          if (!m.read && except.indexOf(m.id) === -1) {
+            m.read = true;
+            changed = true;
+          }
+        });
+        if (changed) await storageSet({ ps_inbox: inbox });
+        await updateBadge();
+      }).then(
+        function () { sendResponse({ ok: true }); },
+        function (e) { sendResponse({ ok: false, error: e.message }); }
+      );
+      return true;
+    }
+
+    if (req.type === 'ps-inbox-mark-unread') {
+      serialInboxWrite(async function () {
+        var inbox = (await storageGet([INBOX_KEY]))[INBOX_KEY] || [];
+        var changed = false;
+        inbox.forEach(function (m) {
+          if (m.id === req.id && m.read) { m.read = false; changed = true; }
         });
         if (changed) await storageSet({ ps_inbox: inbox });
         await updateBadge();

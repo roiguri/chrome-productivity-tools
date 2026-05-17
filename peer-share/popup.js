@@ -698,10 +698,22 @@
           escapeHtml(m.text) + '</div>';
       } else if (m.type === 'image') {
         bodyHtml = '<div class="inbox-media" data-media="1">' +
-          '<span class="inbox-loading">Loading image…</span></div>';
+          '<div class="img-skel"></div></div>';
       } else {
         bodyHtml = '<div class="inbox-caption">📎 ' +
           escapeHtml(m.fileName || 'file') + '</div>';
+      }
+
+      // A card whose delete is pending shows only an Undo affordance.
+      if (pendingDeletes[m.id]) {
+        card.classList.add('pending-del');
+        card.innerHTML = head +
+          '<div class="inbox-pending">Message deleted · ' +
+          '<span class="link" data-act="undo">Undo</span></div>';
+        card.querySelector('[data-act="undo"]')
+          .addEventListener('click', function () { undoDelete(m.id); });
+        el.inboxList.appendChild(card);
+        return;
       }
 
       var actBtns;
@@ -713,6 +725,9 @@
       } else {
         actBtns = '<button data-act="save">Save</button>';
       }
+      if (m.read) {
+        actBtns += '<button data-act="unread">Mark unread</button>';
+      }
       card.innerHTML = head + cap + bodyHtml +
         '<div class="inbox-actions">' + actBtns +
         '<button class="danger" data-act="delete">Delete</button></div>';
@@ -723,6 +738,7 @@
         if (act === 'copy') copyText(m.text);
         else if (act === 'copyimg') copyImage(m);
         else if (act === 'save') saveItem(m);
+        else if (act === 'unread') markUnread(m.id);
         else if (act === 'delete') deleteItem(m.id);
       });
 
@@ -744,8 +760,12 @@
             slot.appendChild(img);
           } else {
             slot.innerHTML =
-              '<span class="inbox-loading">Image not available yet —' +
-              ' it will appear once downloaded.</span>';
+              '<button class="btn-retry" data-act="retry">Retry</button>';
+            slot.querySelector('[data-act="retry"]')
+              .addEventListener('click', function () {
+                slot.innerHTML = '<div class="img-skel"></div>';
+                renderInbox();
+              });
           }
         }, function () {});
       }
@@ -754,10 +774,27 @@
     markAllRead(inbox);
   }
 
+  // Ids the user explicitly marked unread this popup session — auto
+  // mark-all-read must not re-read them (cleared on popup reopen).
+  var manualUnread = {};
+
   function markAllRead(inbox) {
-    var anyUnread = inbox.some(function (m) { return !m.read; });
-    if (anyUnread) sendBg({ type: 'ps-inbox-mark-read' });
+    var except = Object.keys(manualUnread);
+    // Only the items we'd actually flip (ignore ones the user kept unread)
+    // — and tell the SW to skip them, so this converges instead of
+    // oscillating against storage.onChanged re-renders.
+    var anyUnread = inbox.some(function (m) {
+      return !m.read && except.indexOf(m.id) === -1;
+    });
+    if (anyUnread) {
+      sendBg({ type: 'ps-inbox-mark-read', except: except });
+    }
     updateInboxBadge();
+  }
+
+  function markUnread(id) {
+    manualUnread[id] = true;
+    sendBg({ type: 'ps-inbox-mark-unread', id: id });
   }
 
   function copyText(text) {
@@ -819,10 +856,27 @@
     showStatus('Saved.', 'success');
   }
 
+  // Deferred delete: show Undo for 5s, only then commit. Popup closing
+  // before the timer fires simply cancels it (nothing is lost).
+  var pendingDeletes = {};
+
   function deleteItem(id) {
-    sendBg({ type: 'ps-inbox-delete', id: id }).then(function () {
-      renderInbox();
-    });
+    if (pendingDeletes[id]) return;
+    pendingDeletes[id] = setTimeout(function () {
+      delete pendingDeletes[id];
+      sendBg({ type: 'ps-inbox-delete', id: id }).then(function () {
+        renderInbox();
+      });
+    }, 5000);
+    renderInbox(); // re-render: this card flips to the Undo state
+  }
+
+  function undoDelete(id) {
+    if (pendingDeletes[id]) {
+      clearTimeout(pendingDeletes[id]);
+      delete pendingDeletes[id];
+    }
+    renderInbox();
   }
 
   async function updateInboxBadge() {
