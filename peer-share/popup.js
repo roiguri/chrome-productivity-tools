@@ -14,7 +14,8 @@
     inboxView: document.getElementById('inboxView'),
     notConfigured: document.getElementById('notConfigured'),
     sendForm: document.getElementById('sendForm'),
-    captureBtn: document.getElementById('captureBtn'),
+    captureRegionBtn: document.getElementById('captureRegionBtn'),
+    captureFullBtn: document.getElementById('captureFullBtn'),
     fileInput: document.getElementById('fileInput'),
     textInput: document.getElementById('textInput'),
     peerSelect: document.getElementById('peerSelect'),
@@ -313,9 +314,18 @@
 
   // ---- screenshot capture ---------------------------------------------------
 
-  async function captureScreenshot() {
+  // Region: the popup closes the moment you interact with the page, so
+  // selection happens on the page (overlay injected by the SW). The cropped
+  // image lands in the persisted draft and shows in the tray on reopen.
+  function startRegionCapture() {
+    sendBg({ type: 'ps-region-capture' });
+    window.close();
+  }
+
+  // Full tab: capture the whole visible tab right now, no popup close.
+  async function captureFullTab() {
     try {
-      el.captureBtn.disabled = true;
+      el.captureFullBtn.disabled = true;
       var dataUrl = await chrome.tabs.captureVisibleTab(undefined, {
         format: 'png'
       });
@@ -334,7 +344,7 @@
     } catch (e) {
       showStatus('Could not capture tab: ' + e.message, 'error');
     } finally {
-      el.captureBtn.disabled = false;
+      el.captureFullBtn.disabled = false;
     }
   }
 
@@ -652,7 +662,8 @@
 
   el.tabSend.addEventListener('click', function () { switchTab('send'); });
   el.tabInbox.addEventListener('click', function () { switchTab('inbox'); });
-  el.captureBtn.addEventListener('click', captureScreenshot);
+  el.captureRegionBtn.addEventListener('click', startRegionCapture);
+  el.captureFullBtn.addEventListener('click', captureFullTab);
   el.sendBtn.addEventListener('click', send);
   el.openOptionsLink.addEventListener('click', function () {
     chrome.runtime.openOptionsPage();
@@ -675,6 +686,21 @@
   // the doorbell (~0.1–0.4s) and only keep a slow safety poll; otherwise we
   // fall back to the original ~2s poll. ps-poll-now runs reconcile() in the
   // single-writer SW, so delivery stays race-free either way.
+  // Clear any transient region-capture badge on open.
+  sendBg({ type: 'ps-popup-open' });
+
+  // Show a one-shot message stashed by the SW (e.g. region capture failed
+  // on a restricted page) as the red status banner.
+  sessionGet(['ps_flash']).then(function (s) {
+    var f = s.ps_flash;
+    if (f && f.message && Date.now() - (f.ts || 0) < 15000) {
+      chrome.storage.session.remove('ps_flash');
+      showStatus(f.message, 'error');
+    } else if (f) {
+      chrome.storage.session.remove('ps_flash');
+    }
+  });
+
   if (FB.isConfigured()) {
     sendBg({ type: 'ps-poll-now' });
     var stopDoorbell = null;

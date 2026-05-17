@@ -61,10 +61,19 @@
     .status.error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
     .status.info { background: #e2e3e5; color: #383d41; border: 1px solid #d6d8db; }
 
-    .attach-row {
+    .btn-block {
+      width: 100%;
+      margin-top: 10px;
+    }
+    .shot-label {
+      margin: 12px 0 6px;
+      font-weight: 500;
+      color: #495057;
+      font-size: 13px;
+    }
+    .shot-row {
       display: flex;
       gap: 8px;
-      margin-top: 10px;
     }
     .btn-ghost {
       flex: 1 1 0;
@@ -314,14 +323,19 @@
           <span class="link" id="openOptionsLink">No peers yet — add one in Options</span>
         </div>
 
+        <button class="action btn-primary" id="sendBtn" disabled>Send</button>
+
         <label for="textInput">Message</label>
         <textarea id="textInput"
           placeholder="Type or paste text — or paste an image"></textarea>
 
-        <div class="attach-row">
-          <label class="btn-ghost" for="fileInput">📎 Attach files</label>
-          <input type="file" id="fileInput" multiple hidden>
-          <button type="button" class="btn-ghost" id="captureBtn">📸 Screenshot</button>
+        <label class="btn-ghost btn-block" for="fileInput">Attach files</label>
+        <input type="file" id="fileInput" multiple hidden>
+
+        <div class="shot-label">Take a screenshot</div>
+        <div class="shot-row">
+          <button type="button" class="btn-ghost" id="captureFullBtn">Full tab</button>
+          <button type="button" class="btn-ghost" id="captureRegionBtn">Selection</button>
         </div>
 
         <div class="tray" id="tray" style="display:none;">
@@ -331,8 +345,6 @@
           </div>
           <div id="trayList"></div>
         </div>
-
-        <button class="action btn-primary" id="sendBtn" disabled>Send</button>
       </div>
     </div>
 

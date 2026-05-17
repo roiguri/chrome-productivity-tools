@@ -300,10 +300,197 @@ importScripts('firebase-config.js', 'firebase.js');
     if (alarm.name === POLL_ALARM) reconcile();
   });
 
+  // ---- region screenshot ----------------------------------------------------
+  // Injected into the page (runs in the tab, not here). Lets the user
+  // rubber-band a rectangle; Esc / empty selection cancels. Reports the
+  // rect back in CSS px plus devicePixelRatio.
+  function psRegionOverlay() {
+    if (window.__psRegionActive) return;
+    window.__psRegionActive = true;
+    var dpr = window.devicePixelRatio || 1;
+    var ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed;inset:0;z-index:2147483647;' +
+      'cursor:crosshair;background:rgba(0,0,0,0.12);';
+    var box = document.createElement('div');
+    box.style.cssText = 'position:fixed;border:2px solid #009efd;' +
+      'background:rgba(0,158,253,0.15);display:none;z-index:2147483647;' +
+      'pointer-events:none;';
+    document.documentElement.appendChild(ov);
+    document.documentElement.appendChild(box);
+    var sx = 0, sy = 0, drawing = false;
+    function cleanup() {
+      ov.remove(); box.remove();
+      window.__psRegionActive = false;
+      document.removeEventListener('keydown', onKey, true);
+    }
+    function cancel() {
+      cleanup();
+      chrome.runtime.sendMessage({ type: 'ps-region-rect', cancelled: true });
+    }
+    function onKey(e) {
+      if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+    }
+    document.addEventListener('keydown', onKey, true);
+    ov.addEventListener('mousedown', function (e) {
+      drawing = true; sx = e.clientX; sy = e.clientY;
+      box.style.left = sx + 'px'; box.style.top = sy + 'px';
+      box.style.width = '0px'; box.style.height = '0px';
+      box.style.display = 'block';
+    });
+    ov.addEventListener('mousemove', function (e) {
+      if (!drawing) return;
+      box.style.left = Math.min(e.clientX, sx) + 'px';
+      box.style.top = Math.min(e.clientY, sy) + 'px';
+      box.style.width = Math.abs(e.clientX - sx) + 'px';
+      box.style.height = Math.abs(e.clientY - sy) + 'px';
+    });
+    ov.addEventListener('mouseup', function (e) {
+      if (!drawing) { cancel(); return; }
+      drawing = false;
+      var x = Math.min(e.clientX, sx), y = Math.min(e.clientY, sy);
+      var w = Math.abs(e.clientX - sx), h = Math.abs(e.clientY - sy);
+      cleanup();
+      if (w < 5 || h < 5) {
+        chrome.runtime.sendMessage({ type: 'ps-region-rect', cancelled: true });
+        return;
+      }
+      // Let the overlay paint-out before the tab is captured.
+      setTimeout(function () {
+        chrome.runtime.sendMessage({
+          type: 'ps-region-rect',
+          rect: { x: x, y: y, w: w, h: h },
+          dpr: dpr
+        });
+      }, 60);
+    });
+  }
+
+  function notify(id, message) {
+    chrome.notifications.create(id, {
+      type: 'basic',
+      iconUrl: 'icons/icon128.png',
+      title: 'Peer Share',
+      message: message
+    });
+  }
+
+  // Stash a one-shot message the popup shows as its red status banner on
+  // next open (OS notifications are unreliable; the popup banner is not).
+  function flash(message) {
+    return new Promise(function (resolve) {
+      chrome.storage.session.set({
+        ps_flash: { message: message, ts: Date.now() }
+      }, resolve);
+    });
+  }
+
+  async function regionCaptureFailed() {
+    var msg = "Can't take a screenshot on this page — try a different web page.";
+    await flash(msg);
+    notify('ps-region-err', msg);
+    // Bring the popup back so the user isn't stranded with it closed.
+    try { await chrome.action.openPopup(); } catch (e) { /* noop */ }
+  }
+
+  async function startRegionCapture() {
+    try {
+      var tabs = await chrome.tabs.query({
+        active: true,
+        lastFocusedWindow: true
+      });
+      var tab = tabs && tabs[0];
+      if (!tab || !tab.id) { await regionCaptureFailed(); return; }
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: psRegionOverlay
+      });
+    } catch (e) {
+      await regionCaptureFailed();
+    }
+  }
+
+  // Append a freshly cropped region to the persisted draft tray (the popup
+  // is closed during selection, so it rehydrates from the draft on reopen).
+  function appendDraftTray(item) {
+    return openMediaDb().then(function (db) {
+      return new Promise(function (resolve) {
+        var tx = db.transaction('draft', 'readwrite');
+        var st = tx.objectStore('draft');
+        var g = st.get('tray');
+        g.onsuccess = function (e) {
+          var arr = e.target.result || [];
+          arr.push(item);
+          st.put(arr, 'tray');
+        };
+        tx.oncomplete = function () { resolve(); };
+        tx.onerror = function () { resolve(); };
+      });
+    }).catch(function () {});
+  }
+
+  async function handleRegionRect(req, sender) {
+    if (req.cancelled) return;
+    try {
+      var winId = sender && sender.tab ? sender.tab.windowId : undefined;
+      var dataUrl = await chrome.tabs.captureVisibleTab(winId, {
+        format: 'png'
+      });
+      var blob = await (await fetch(dataUrl)).blob();
+      var bmp = await createImageBitmap(blob);
+      var dpr = req.dpr || 1, r = req.rect;
+      var sw = Math.max(1, Math.round(r.w * dpr));
+      var sh = Math.max(1, Math.round(r.h * dpr));
+      var canvas = new OffscreenCanvas(sw, sh);
+      var ctx = canvas.getContext('2d');
+      ctx.drawImage(bmp, Math.round(r.x * dpr), Math.round(r.y * dpr),
+        sw, sh, 0, 0, sw, sh);
+      var jpeg = await canvas.convertToBlob({
+        type: 'image/jpeg',
+        quality: 0.85
+      });
+      await appendDraftTray({
+        kind: 'image',
+        blob: jpeg,
+        fileName: 'screenshot-' + Date.now() + '.jpg',
+        mimeType: 'image/jpeg'
+      });
+      // Best path: pop the UI back up with the capture already staged.
+      // Fallback (older Chrome / no focused window): badge + notification,
+      // and the badge is cleared the next time the popup opens.
+      try {
+        await chrome.action.openPopup();
+      } catch (e) {
+        chrome.action.setBadgeText({ text: '＋' });
+        chrome.action.setBadgeBackgroundColor({ color: '#009efd' });
+        notify('ps-region', 'Region captured — open Peer Share to send');
+      }
+    } catch (e) {
+      await flash('Could not capture region: ' + e.message);
+      notify('ps-region-err', 'Could not capture region: ' + e.message);
+      try { await chrome.action.openPopup(); } catch (e2) { /* noop */ }
+    }
+  }
+
   // Inbox is single-writer: popup/options send intents; only this worker
   // mutates ps_inbox. ps-poll-now drives the fast active-delivery path.
   chrome.runtime.onMessage.addListener(function (req, sender, sendResponse) {
     if (!req || !req.type) return;
+
+    if (req.type === 'ps-region-capture') {
+      startRegionCapture();
+      return false;
+    }
+
+    if (req.type === 'ps-region-rect') {
+      handleRegionRect(req, sender);
+      return false;
+    }
+
+    if (req.type === 'ps-popup-open') {
+      // Clear any transient capture badge; restore the real unread count.
+      updateBadge();
+      return false;
+    }
 
     if (req.type === 'ps-poll-now') {
       reconcile().then(
