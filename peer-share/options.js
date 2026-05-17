@@ -194,8 +194,7 @@
       var myUid = await FB.getUid();
       obj = (await FB.rtdbGet('contacts/' + myUid)) || {};
     } catch (e) {
-      el.pendingList.innerHTML =
-        '<p class="empty-state">Could not load requests.</p>';
+      // Transient: keep whatever is shown rather than flashing an error.
       return;
     }
     var codes = Object.keys(obj).filter(function (c) {
@@ -241,6 +240,7 @@
       var myUid = await FB.getUid();
       await FB.rtdbDelete('contacts/' + myUid + '/' + fromCode);
     } catch (e) { /* noop */ }
+    chrome.runtime.sendMessage({ type: 'ps-poll-now' });
     loadPending();
     showStatus('Request accepted.', 'success');
   }
@@ -250,6 +250,7 @@
       var myUid = await FB.getUid();
       await FB.rtdbDelete('contacts/' + myUid + '/' + fromCode);
     } catch (e) { /* noop */ }
+    chrome.runtime.sendMessage({ type: 'ps-poll-now' });
     loadPending();
     showStatus('Request ignored.', 'success');
   }

@@ -44,11 +44,17 @@ importScripts('firebase-config.js', 'firebase.js');
   }
 
   async function updateBadge() {
-    var inbox = (await storageGet([INBOX_KEY]))[INBOX_KEY] || [];
+    var s = await storageGet([INBOX_KEY, 'ps_pending']);
+    var inbox = s[INBOX_KEY] || [];
     var unread = inbox.filter(function (m) { return !m.read; }).length;
-    if (unread > 0) {
-      chrome.action.setBadgeText({ text: String(unread) });
-      chrome.action.setBadgeBackgroundColor({ color: '#009efd' });
+    var pending = s.ps_pending || 0;
+    var total = unread + pending;
+    if (total > 0) {
+      chrome.action.setBadgeText({ text: String(total) });
+      // Highlight (amber) when there's a friend request waiting.
+      chrome.action.setBadgeBackgroundColor({
+        color: pending > 0 ? '#f59e0b' : '#009efd'
+      });
     } else {
       chrome.action.setBadgeText({ text: '' });
     }
@@ -251,8 +257,16 @@ importScripts('firebase-config.js', 'firebase.js');
   // the delivery mechanism (driven by the poll alarm + popup ps-poll-now).
   async function reconcile() {
     if (!FB.isConfigured()) return;
+    var uid;
     try {
-      var uid = await FB.getUid();
+      uid = await FB.getUid();
+    } catch (e) {
+      console.warn('[Peer Share] reconcile auth failed:', e.message);
+      return;
+    }
+    // Messages and contacts are independent: a flaky messages query must
+    // not stop the friend-request badge/notification from updating.
+    try {
       var rows = await FB.firestoreQueryEqual('messages', 'to', uid, 50);
       var inbox = (await storageGet([INBOX_KEY]))[INBOX_KEY] || [];
       var have = {};
@@ -262,29 +276,38 @@ importScripts('firebase-config.js', 'firebase.js');
         if (have[r.id] || r.data.delivered) continue;
         await ingestMessage(r.id);
       }
+    } catch (e) {
+      console.warn('[Peer Share] message reconcile failed:', e.message);
+    }
+    try {
       await checkContacts(uid);
     } catch (e) {
-      console.warn('[Peer Share] reconcile failed:', e.message);
+      console.warn('[Peer Share] contact check failed:', e.message);
     }
   }
 
-  // Notify (once) about new incoming friend requests.
+  // Track incoming friend requests: keep ps_pending in sync (drives the
+  // toolbar badge) and notify once per newly-seen requester.
   async function checkContacts(uid) {
     if (!FB.rtdbEnabled()) return;
     try {
       var obj = (await FB.rtdbGet('contacts/' + uid)) || {};
-      var codes = Object.keys(obj);
+      var peers = (await storageGet(['ps_peers'])).ps_peers || [];
+      var codes = Object.keys(obj).filter(function (c) {
+        return !peers.some(function (p) { return p.code === c; });
+      });
       var seen = (await storageGet(['ps_seen_contacts']))
         .ps_seen_contacts || [];
       var fresh = codes.filter(function (c) {
         return seen.indexOf(c) === -1;
       });
-      await storageSet({ ps_seen_contacts: codes });
+      await storageSet({ ps_seen_contacts: codes, ps_pending: codes.length });
       if (fresh.length) {
         notify('ps-contact', fresh.length === 1
-          ? 'New connection request — open Options to accept'
-          : fresh.length + ' new connection requests — open Options');
+          ? 'New connection request — open Peer Share to accept'
+          : fresh.length + ' new connection requests — open Peer Share');
       }
+      await updateBadge();
     } catch (e) { /* noop */ }
   }
 

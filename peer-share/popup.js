@@ -424,6 +424,7 @@
   // ---- peers ----------------------------------------------------------------
 
   async function loadPeers() {
+    var prev = el.peerSelect.value;
     var peers = (await storageGet([PEERS_KEY]))[PEERS_KEY] || [];
     el.peerSelect.innerHTML = '';
     if (!peers.length) {
@@ -439,6 +440,14 @@
       o.textContent = p.nickname + ' (' + p.code.slice(0, 8) + '…)';
       el.peerSelect.appendChild(o);
     });
+    // Keep the user's current pick across refreshes (e.g. after accepting
+    // a request) so the dropdown updates without losing selection.
+    if (prev) {
+      var opts = el.peerSelect.options;
+      for (var i = 0; i < opts.length; i++) {
+        if (opts[i].value === prev) { el.peerSelect.value = prev; break; }
+      }
+    }
   }
 
   // ---- sending --------------------------------------------------------------
@@ -564,7 +573,16 @@
       obj = (await FB.rtdbGet('contacts/' + myUid)) || {};
       peers = (await storageGet([PEERS_KEY]))[PEERS_KEY] || [];
     } catch (e) {
-      el.inboxRequests.innerHTML = '';
+      // Transient error (e.g. token not ready yet): leave any shown
+      // requests in place and try again shortly rather than no-opping
+      // until the next poll tick.
+      if (!renderRequests._retry) {
+        renderRequests._retry = true;
+        setTimeout(function () {
+          renderRequests._retry = false;
+          renderRequests();
+        }, 2000);
+      }
       return;
     }
     var codes = Object.keys(obj).filter(function (c) {
@@ -602,14 +620,17 @@
     }
     try { await FB.rtdbDelete('contacts/' + myUid + '/' + code); }
     catch (e) { /* noop */ }
+    sendBg({ type: 'ps-poll-now' }); // refresh ps_pending / badge
     showStatus('Request accepted.', 'success');
     renderRequests();
     renderInbox();
+    loadPeers(); // refresh the Send-to-peer list with the new connection
   }
 
   async function ignoreRequest(code, myUid) {
     try { await FB.rtdbDelete('contacts/' + myUid + '/' + code); }
     catch (e) { /* noop */ }
+    sendBg({ type: 'ps-poll-now' }); // refresh ps_pending / badge
     showStatus('Request ignored.', 'success');
     renderRequests();
   }
@@ -756,7 +777,10 @@
   chrome.storage.onChanged.addListener(function (changes, area) {
     if (area !== 'local' || !changes[INBOX_KEY]) return;
     updateInboxBadge();
-    if (el.inboxView.style.display !== 'none') renderInbox();
+    if (el.inboxView.style.display !== 'none') {
+      renderInbox();
+      renderRequests();
+    }
   });
 
   // Fast-delivery while this popup is open. With RTDB configured we stream
@@ -803,4 +827,7 @@
   renderTray();
   loadPeers().then(restoreDraft);
   updateInboxBadge();
+  // Prefetch friend requests on open so they're already in the Inbox the
+  // moment you switch to it (independent of tab / first-call timing).
+  renderRequests();
 })();
