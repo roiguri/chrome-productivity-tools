@@ -82,7 +82,7 @@ Send a screenshot of the current tab, a file, or pasted text straight to a paire
 - **Version:** 1.0.0
 - **Features:**
   - Screenshot / file / text sharing to a specific peer
-  - True push delivery via `chrome.gcm` + a Firebase Cloud Function
+  - Real-time RTDB "doorbell" delivery (~0.1–0.4s when open, ~1 min idle backstop) — no Cloud Function, free Spark tier
   - Anonymous pairing-code identity (no accounts)
   - User-provisioned Firebase relay — no other backend
 

@@ -1,8 +1,8 @@
 # Peer Share — Architecture
 
 A living design doc for the Peer Share extension. It explains the identity
-model, the send/receive data flow, the push path, the data model + security
-rules, and what is intentionally left for later.
+model, the send/receive data flow, the polling delivery path, the data model +
+security rules, and what is intentionally left for later.
 
 ## Goals & constraints
 
@@ -32,11 +32,10 @@ rules, and what is intentionally left for later.
 |---|---|
 | `firebase-config.js` | User-edited project config + an `IS_SET` guard. Loads in both the SW and pages via a `self`/`globalThis` IIFE. |
 | `firebase.js` | The **only** networking module. REST helpers for anon auth/refresh, Firestore CRUD + single-field query, and Storage upload/download. Exposes `PeerShareFirebase`. |
-| `background.js` | Service worker: sign-in, `chrome.gcm` register + token publish, push ingestion, reconcile alarm, badge. |
-| `popup.html/js` | Send view (screenshot/file/text → peer + caption) and Inbox view. |
+| `background.js` | Service worker: sign-in, the poll alarm + `reconcile()` delivery, the **single-writer inbox mutex**, lazy media fetch into IndexedDB, badge. |
+| `popup.html/js` | Send view (screenshot/file/text → peer + caption) and Inbox view (live-refresh, lazy image render, ~2s active poll while open). |
 | `options.html/js/css` | Firebase status, **my pairing code** (+copy), peer CRUD, inbox retention, clear inbox. |
-| `functions/` | The push Cloud Function (`onDocumentCreated('messages/{id}')`). |
-| `firebase.json`, `firestore.rules`, `storage.rules` | Deployed via the Firebase CLI. |
+| `firebase.json`, `firestore.rules`, `storage.rules`, `database.rules.json` | Deployed via the Firebase CLI (rules only — no functions). |
 
 ## Send flow (popup)
 
@@ -53,44 +52,65 @@ rules, and what is intentionally left for later.
    `{ to, from, type, caption, ts, delivered:false,
    (storagePath|text), fileName?, mimeType? }`.
 
-## Receive flow (true push + safety net)
+## Receive flow (polling — no push, no Cloud Function)
 
 ```
 sender popup ──create──▶ Firestore messages/{id}
-                               │ onDocumentCreated
-                               ▼
-                       Cloud Function
-                  reads users/{to}.gcmToken
-                               │ FCM data msg { messageId }
-                               ▼
-recipient: chrome.gcm.onMessage  (wakes the dormant SW)
-                               │
-        firestoreGet messages/{id}  ──▶ storageDownload(storagePath)
-                               │
-     push into chrome.storage.local `ps_inbox`  +  mark delivered:true
-                               │
-            chrome.notifications + toolbar badge update
+
+sender also ──PUT──▶ RTDB signals/{recipientUid} = {id, ts}   (doorbell)
+
+recipient reconcile()  (driven by, fastest first):
+  • RTDB doorbell stream (EventSource on signals/{myUid}) while a
+    popup/options page is open → ps-poll-now within ~0.1–0.4s
+  • chrome.alarms `ps-poll` every ~1 min                (idle backstop)
+  • slow safety poll while a page is open (15s; 2s if RTDB unconfigured)
+        │
+  query messages where to == myUid  → for each new id:
+        │  ingestMessage (serialized via the inbox mutex)
+        ├─ write metadata-only item to ps_inbox  (FAST: no download)
+        ├─ chrome.notifications + badge
+        ├─ mark messages/{id}.delivered = true
+        └─ fetchAndStoreMedia(id)  (outside mutex):
+              storageDownload → IndexedDB blob → flip mediaReady=true
+recipient popup: storage.onChanged → re-render; image <img> src is a
+                 URL.createObjectURL of the IndexedDB blob
 ```
 
-- `background.js` registers with `chrome.gcm.register([messagingSenderId])`
-  and upserts `users/{uid} = { gcmToken, updatedAt }`. Token changes are
-  re-published.
-- The Cloud Function sends a **data-only** FCM message containing just the
-  Firestore document id — the payload itself is fetched by the recipient.
-- **Reconcile fallback:** a 30-minute `chrome.alarms` job queries
-  `messages where to == myUid` (single-field, no composite index), filters
-  `!delivered` client-side, and ingests anything a push missed. Ingestion is
-  idempotent (skips ids already in the inbox).
+- **No `chrome.gcm`, no FCM, no Cloud Function, no `users` collection.**
+  Sending a push needs a server-held secret (service-account / VAPID key)
+  that can't safely ship in an extension, so there is no push. Instead the
+  sender writes a tiny **RTDB doorbell** and the recipient streams it over a
+  plain `EventSource` (RTDB REST `text/event-stream`, authed with the anon ID
+  token) — real-time while a page is open, no SDK, no build step. The
+  `chrome.alarms` poll remains the backstop for the fully-dormant case (an
+  evicted MV3 worker can't hold the stream; waking it instantly would require
+  a server push).
+- `subscribeDoorbell` (firebase.js) auto-reconnects with backoff and a fresh
+  token on `auth_revoked` (the ~1h ID token expiry).
+- **Single-writer inbox:** every `ps_inbox` mutation (ingest, mark-read,
+  delete, clear) is serialized through one promise-chain mutex in the SW.
+  popup/options send intents (`ps-inbox-*`) rather than writing storage, so a
+  received message can't be clobbered by a concurrent UI write.
+- **Lazy media:** ingest stores only metadata so the inbox entry +
+  notification are instant; payload bytes are fetched lazily into IndexedDB
+  (keyed by message id) and rendered via object URLs — no giant base64 in
+  `chrome.storage.local`.
+- The poll query is single-field (`to == myUid`, no composite index);
+  `delivered` + already-in-inbox are filtered client-side. Ingestion is
+  idempotent.
 
 ## Data model
 
 - `messages/{autoId}`: `to`, `from`, `type` (`text|image|file`), `caption`,
   `ts`, `delivered`, plus `text` **or** (`storagePath`, `fileName`,
   `mimeType`).
-- `users/{uid}`: `gcmToken`, `updatedAt`.
+- RTDB `signals/{recipientUid}`: `{ id, ts }` doorbell only — no payload.
 - Storage objects: `messages/{recipientUid}/{ts}_{safeName}`.
-- Local (`chrome.storage.local`): `ps_auth`, `ps_peers`, `ps_inbox`,
-  `ps_settings` (`{ retention }`), `ps_gcm_token`.
+- Local (`chrome.storage.local`): `ps_auth`, `ps_peers`, `ps_inbox`
+  (metadata only — items carry `storagePath`/`mediaReady`, not bytes),
+  `ps_settings` (`{ retention }`).
+- IndexedDB `peer-share-media` store `blobs`: received payload bytes keyed by
+  message id.
 
 ## Security rules
 
@@ -98,20 +118,23 @@ recipient: chrome.gcm.onMessage  (wakes the dormant SW)
   request.auth.uid`; `read/update/delete` only if `resource.data.to ==
   request.auth.uid`. So you can't forge a sender, and only the recipient sees
   or acknowledges a message.
-- **`users/{uid}`** — owner-only write; readable by any authed user (a
-  registration token is a routing id, not a credential — needed so the push
-  function/sender path can resolve it).
 - **Storage `messages/{uid}/**`** — authed write; read restricted to the
   recipient whose uid is in the path.
+- **RTDB `signals/{uid}`** — authed write (any peer may ring you); read only
+  by the owner. Default-deny everywhere else.
 
 ## Trade-offs
 
 - Diverges from the repo's strict no-backend norm; needs a user Firebase
-  project on **Blaze** + a one-time `firebase deploy`.
-- GCM is best-effort, hence the reconcile alarm.
+  project + a one-time `firebase deploy` of rules. The free **Spark** plan is
+  sufficient (no Cloud Function).
+- RTDB doorbell stream → ~0.1–0.4s while a page is open; ~1 min when fully
+  idle/closed (notification still fires). Sub-second to a fully-closed
+  browser is impossible without a server push, by design. RTDB is optional;
+  absent it, delivery falls back to a ~2s poll.
 - Screenshots are lossy-recompressed to keep uploads small.
-- Inbox payloads are stored as data URLs in `chrome.storage.local`
-  (`unlimitedStorage`), capped by the retention setting.
+- Inbox payload bytes live in IndexedDB; `ps_inbox` holds metadata only.
+  Retention trims both (oldest items' blobs are deleted on trim/delete/clear).
 
 ## Future plans (out of scope for this iteration)
 

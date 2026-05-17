@@ -24,20 +24,10 @@
       <p class="help-text" id="fbHelp">
         Peer Share relays through your own Firebase project. Edit
         <code class="mono">firebase-config.js</code> with your project's web
-        config, then reload the extension. See the README for the full setup
-        (including deploying the push Cloud Function).
+        config, then reload the extension. See the README for the full setup.
+        New items are delivered by polling — instant while the extension is
+        open, within about a minute otherwise.
       </p>
-      <div class="section-header" style="margin-top:12px;">
-        <h2>Push notifications</h2>
-        <span id="pushStatus" class="config-status bad">Checking…</span>
-      </div>
-      <p class="help-text">
-        Required to receive items in the background. If this stays
-        <em>Not registered</em>, click Retry; registration also retries
-        automatically every minute until it succeeds.
-      </p>
-      <button class="btn btn-secondary btn-small" id="retryPushBtn"
-              style="margin-top:8px;">Retry registration</button>
     </section>
 
     <!-- My pairing code -->

@@ -65,6 +65,64 @@
     });
   }
 
+  function sendBg(msg) {
+    return new Promise(function (resolve) {
+      chrome.runtime.sendMessage(msg, function (resp) {
+        if (chrome.runtime.lastError) { resolve(null); return; }
+        resolve(resp);
+      });
+    });
+  }
+
+  // Read-only view of the background worker's media blob store.
+  var mediaDb = null;
+
+  function openMediaDb() {
+    if (mediaDb) return Promise.resolve(mediaDb);
+    return new Promise(function (resolve, reject) {
+      var req = indexedDB.open('peer-share-media', 1);
+      req.onupgradeneeded = function (e) {
+        e.target.result.createObjectStore('blobs');
+      };
+      req.onsuccess = function (e) { mediaDb = e.target.result; resolve(mediaDb); };
+      req.onerror = function (e) { reject(e.target.error); };
+    });
+  }
+
+  function loadMediaBlob(id) {
+    return openMediaDb().then(function (db) {
+      return new Promise(function (resolve, reject) {
+        var tx = db.transaction('blobs', 'readonly');
+        var r = tx.objectStore('blobs').get(id);
+        r.onsuccess = function (e) { resolve(e.target.result || null); };
+        r.onerror = function (e) { reject(e.target.error); };
+      });
+    });
+  }
+
+  var objectUrls = [];
+
+  function revokeObjectUrls() {
+    objectUrls.forEach(function (u) { URL.revokeObjectURL(u); });
+    objectUrls = [];
+  }
+
+  // Resolve a displayable URL for a non-text item. Legacy items carry an
+  // inline dataUrl; new items keep bytes in IndexedDB (fetched lazily — ask
+  // the worker to download if it hasn't yet).
+  async function getMediaUrl(m) {
+    if (m.dataUrl) return m.dataUrl;
+    var blob = await loadMediaBlob(m.id).catch(function () { return null; });
+    if (!blob && !m.mediaReady) {
+      await sendBg({ type: 'ps-inbox-fetch-media', id: m.id });
+      blob = await loadMediaBlob(m.id).catch(function () { return null; });
+    }
+    if (!blob) return null;
+    var url = URL.createObjectURL(blob);
+    objectUrls.push(url);
+    return url;
+  }
+
   // ---- view switching -------------------------------------------------------
 
   function switchTab(which) {
@@ -217,7 +275,15 @@
         doc.fileName = payload.fileName;
         doc.mimeType = payload.mimeType;
       }
-      await FB.firestoreCreate('messages', doc);
+      var created = await FB.firestoreCreate('messages', doc);
+      // Ring the recipient's doorbell for instant delivery. Best-effort —
+      // if RTDB is unconfigured or this fails, their poll still picks it up.
+      if (FB.rtdbEnabled()) {
+        FB.rtdbPut('signals/' + toCode, {
+          id: created && created.id ? created.id : '',
+          ts: Date.now()
+        }).catch(function () {});
+      }
       showStatus('Sent!', 'success');
       el.captionInput.value = '';
       el.textInput.value = '';
@@ -234,14 +300,20 @@
 
   // ---- inbox ----------------------------------------------------------------
 
+  var renderToken = 0;
+
   async function renderInbox() {
+    var myToken = ++renderToken;
+    revokeObjectUrls();
     var inbox = (await storageGet([INBOX_KEY]))[INBOX_KEY] || [];
+    if (myToken !== renderToken) return;
     if (!inbox.length) {
       el.inboxList.innerHTML =
         '<div class="empty-state">' +
         '<div class="empty-state-icon">📭</div>' +
         '<div class="empty-state-text">No messages yet.<br>' +
         'Items peers send you will appear here.</div></div>';
+      markAllRead(inbox);
       return;
     }
     el.inboxList.innerHTML = '';
@@ -261,7 +333,8 @@
       if (m.type === 'text') {
         bodyHtml = '<div class="inbox-text">' + escapeHtml(m.text) + '</div>';
       } else if (m.type === 'image') {
-        bodyHtml = '<img alt="shared image" src="' + m.dataUrl + '">';
+        bodyHtml = '<div class="inbox-media" data-media="1">' +
+          '<span class="inbox-loading">Loading image…</span></div>';
       } else {
         bodyHtml = '<div class="inbox-caption">📎 ' +
           escapeHtml(m.fileName || 'file') + '</div>';
@@ -283,17 +356,32 @@
       });
 
       el.inboxList.appendChild(card);
+
+      if (m.type === 'image') {
+        var slot = card.querySelector('[data-media]');
+        getMediaUrl(m).then(function (url) {
+          if (myToken !== renderToken || !slot) return;
+          if (url) {
+            slot.innerHTML = '';
+            var img = document.createElement('img');
+            img.alt = 'shared image';
+            img.src = url;
+            slot.appendChild(img);
+          } else {
+            slot.innerHTML =
+              '<span class="inbox-loading">Image not available yet —' +
+              ' it will appear once downloaded.</span>';
+          }
+        }, function () {});
+      }
     });
 
     markAllRead(inbox);
   }
 
-  async function markAllRead(inbox) {
-    var changed = false;
-    inbox.forEach(function (m) {
-      if (!m.read) { m.read = true; changed = true; }
-    });
-    if (changed) await storageSet({ ps_inbox: inbox });
+  function markAllRead(inbox) {
+    var anyUnread = inbox.some(function (m) { return !m.read; });
+    if (anyUnread) sendBg({ type: 'ps-inbox-mark-read' });
     updateInboxBadge();
   }
 
@@ -305,20 +393,26 @@
     });
   }
 
-  function saveItem(m) {
+  async function saveItem(m) {
+    showStatus('Preparing download…', 'info');
+    var url = await getMediaUrl(m).catch(function () { return null; });
+    if (!url) {
+      showStatus('Still downloading — try Save again in a moment.', 'error');
+      return;
+    }
     var a = document.createElement('a');
-    a.href = m.dataUrl;
+    a.href = url;
     a.download = m.fileName || 'shared-file';
     document.body.appendChild(a);
     a.click();
     a.remove();
+    showStatus('Saved.', 'success');
   }
 
-  async function deleteItem(id) {
-    var inbox = (await storageGet([INBOX_KEY]))[INBOX_KEY] || [];
-    inbox = inbox.filter(function (m) { return m.id !== id; });
-    await storageSet({ ps_inbox: inbox });
-    renderInbox();
+  function deleteItem(id) {
+    sendBg({ type: 'ps-inbox-delete', id: id }).then(function () {
+      renderInbox();
+    });
   }
 
   async function updateInboxBadge() {
@@ -343,6 +437,38 @@
   if (!FB.isConfigured()) {
     el.notConfigured.style.display = 'block';
     el.sendForm.style.display = 'none';
+  }
+
+  // Live-refresh: the worker is the only ps_inbox writer; reflect its
+  // changes immediately without reopening the popup.
+  chrome.storage.onChanged.addListener(function (changes, area) {
+    if (area !== 'local' || !changes[INBOX_KEY]) return;
+    updateInboxBadge();
+    if (el.inboxView.style.display !== 'none') renderInbox();
+  });
+
+  // Fast-delivery while this popup is open. With RTDB configured we stream
+  // the doorbell (~0.1–0.4s) and only keep a slow safety poll; otherwise we
+  // fall back to the original ~2s poll. ps-poll-now runs reconcile() in the
+  // single-writer SW, so delivery stays race-free either way.
+  if (FB.isConfigured()) {
+    sendBg({ type: 'ps-poll-now' });
+    var stopDoorbell = null;
+    var pollMs = 2000;
+    if (FB.rtdbEnabled()) {
+      stopDoorbell = FB.subscribeDoorbell(function () {
+        sendBg({ type: 'ps-poll-now' });
+      });
+      if (stopDoorbell) pollMs = 15000; // safety net if the stream stalls
+    }
+    var pollTimer = setInterval(function () {
+      sendBg({ type: 'ps-poll-now' });
+    }, pollMs);
+    window.addEventListener('unload', function () {
+      clearInterval(pollTimer);
+      if (stopDoorbell) stopDoorbell();
+      revokeObjectUrls();
+    });
   }
 
   loadPeers();

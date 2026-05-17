@@ -9,8 +9,6 @@
   var el = {
     status: document.getElementById('status'),
     fbStatus: document.getElementById('fbStatus'),
-    pushStatus: document.getElementById('pushStatus'),
-    retryPushBtn: document.getElementById('retryPushBtn'),
     myCode: document.getElementById('myCode'),
     copyCodeBtn: document.getElementById('copyCodeBtn'),
     addPeerBtn: document.getElementById('addPeerBtn'),
@@ -82,50 +80,6 @@
       el.myCode.textContent = '(sign-in failed: ' + e.message + ')';
     }
   }
-
-  function setPushStatus(registered) {
-    if (registered) {
-      el.pushStatus.textContent = 'Registered';
-      el.pushStatus.className = 'config-status ok';
-    } else {
-      el.pushStatus.textContent = 'Not registered';
-      el.pushStatus.className = 'config-status bad';
-    }
-  }
-
-  function refreshPushStatus() {
-    if (!FB.isConfigured()) {
-      el.pushStatus.textContent = 'Unavailable';
-      el.pushStatus.className = 'config-status bad';
-      return;
-    }
-    chrome.runtime.sendMessage({ type: 'ps-push-status' }, function (resp) {
-      if (chrome.runtime.lastError || !resp) {
-        setPushStatus(false);
-        return;
-      }
-      setPushStatus(resp.registered);
-    });
-  }
-
-  el.retryPushBtn.addEventListener('click', function () {
-    el.pushStatus.textContent = 'Registering…';
-    el.pushStatus.className = 'config-status';
-    chrome.runtime.sendMessage({ type: 'ps-retry-push' }, function (resp) {
-      if (chrome.runtime.lastError || !resp) {
-        setPushStatus(false);
-        showStatus('Could not reach the background worker.', 'error');
-        return;
-      }
-      setPushStatus(resp.registered);
-      showStatus(
-        resp.registered
-          ? 'Push registration succeeded.'
-          : 'Still not registered — it will keep retrying automatically.',
-        resp.registered ? 'success' : 'error'
-      );
-    });
-  });
 
   el.copyCodeBtn.addEventListener('click', function () {
     var code = el.myCode.textContent || '';
@@ -231,9 +185,14 @@
     showStatus('Settings saved.', 'success');
   }
 
-  async function clearInbox() {
-    await storageSet({ ps_inbox: [] });
-    showStatus('Inbox cleared.', 'success');
+  function clearInbox() {
+    chrome.runtime.sendMessage({ type: 'ps-inbox-clear' }, function (resp) {
+      if (chrome.runtime.lastError || !resp || !resp.ok) {
+        showStatus('Could not clear inbox.', 'error');
+        return;
+      }
+      showStatus('Inbox cleared.', 'success');
+    });
   }
 
   // ---- wire up --------------------------------------------------------------
@@ -249,7 +208,21 @@
   el.clearInboxBtn.addEventListener('click', clearInbox);
 
   refreshFirebaseStatus();
-  refreshPushStatus();
   loadPeers();
   loadSettings();
+
+  // Deliver instantly while the options page is open too (same doorbell
+  // stream as the popup; falls back to a slow poll).
+  if (FB.isConfigured()) {
+    var poke = function () { chrome.runtime.sendMessage({ type: 'ps-poll-now' }); };
+    poke();
+    var stopDoorbell = FB.rtdbEnabled()
+      ? FB.subscribeDoorbell(poke)
+      : null;
+    var pollTimer = setInterval(poke, stopDoorbell ? 15000 : 2000);
+    window.addEventListener('unload', function () {
+      clearInterval(pollTimer);
+      if (stopDoorbell) stopDoorbell();
+    });
+  }
 })();

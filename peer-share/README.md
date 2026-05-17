@@ -12,7 +12,8 @@ no chat app in the middle.
 > ⚠️ Unlike the other extensions in this repo, Peer Share is **not 100%
 > no-backend**. It needs a relay to move bytes between two browsers. There is
 > no bundled server — instead you point it at a **Firebase project you own**.
-> Nothing is sent anywhere else.
+> Nothing is sent anywhere else. There is **no Cloud Function** and the free
+> **Spark plan is enough** (Firestore + Storage + Anonymous Auth only).
 
 ## How it works (short version)
 
@@ -22,53 +23,60 @@ no chat app in the middle.
    locally.
 3. Sending uploads the payload to **Firebase Storage** (text goes inline) and
    creates a **Firestore** `messages` document.
-4. A **Cloud Function** sees the new document and sends a tiny push via
-   **Firebase Cloud Messaging** to the recipient's browser.
-5. `chrome.gcm` wakes the recipient's service worker, which downloads the
-   payload, drops it in the Inbox, and shows a notification. **True push** —
-   no constant polling. A 30-minute reconcile alarm is only a safety net for
-   pushes that get dropped.
+4. The sender also "rings a doorbell" — a tiny write to **Realtime Database**
+   at `signals/{recipientUid}`.
+5. The recipient gets the message via, in order of speed:
+   - **Doorbell stream** (~0.1–0.4s): while the popup/options page is open it
+     holds an open RTDB stream and reacts the instant the doorbell rings.
+   - **Idle poll** (~1 min): a `chrome.alarms` job wakes the service worker
+     as a backstop when nothing is open / the stream is dead.
+   When a new message is found, its metadata lands in the **Inbox** and a
+   notification fires immediately; image/file bytes download lazily in the
+   background (cached in IndexedDB). The doorbell is optional — if Realtime
+   Database isn't configured the extension falls back to a ~2s poll.
 
 See [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) for the full design,
 data model, security rules, and future plans.
 
 ## Firebase setup (required, one time)
 
-You need the **Blaze (pay-as-you-go) plan** because Cloud Functions require
-it. At this volume it is effectively free, but a billing account must exist.
+The free **Spark plan is sufficient** — there is no Cloud Function.
 
-1. **Create a project** at <https://console.firebase.google.com> and upgrade
-   it to the **Blaze** plan.
+1. **Create a project** at <https://console.firebase.google.com>.
 2. **Enable services:**
    - Authentication → Sign-in method → **Anonymous** → enable
    - **Firestore Database** → create (production mode)
    - **Storage** → get started
-   - Cloud Messaging is enabled by default.
+   - **Realtime Database** → **Create Database** (any location, *locked
+     mode*) — this powers the instant "doorbell". *Optional but recommended;
+     without it delivery falls back to a ~2s poll.*
 3. **Add a Web app** (Project settings → General → *Your apps* → Web) and copy
    its config. Paste the values into
    [`firebase-config.js`](./firebase-config.js):
-   - `apiKey`, `projectId`, `storageBucket`, `messagingSenderId`
-     (`messagingSenderId` is the project number — used by `chrome.gcm`).
-4. **Install the Firebase CLI** and deploy the relay + rules. From the
+   `apiKey`, `projectId`, `storageBucket`, `messagingSenderId`, and
+   `databaseURL` (shown on the Realtime Database page, e.g.
+   `https://<project>-default-rtdb.firebaseio.com`).
+4. **Install the Firebase CLI** and deploy the security rules. From the
    `peer-share/` directory:
    ```bash
    npm install -g firebase-tools
    firebase login
    firebase use --add          # pick the project you created
-   firebase deploy --only functions,firestore:rules,storage
+   firebase deploy --only firestore:rules,storage,database
    ```
-   `firebase.json`, `functions/`, `firestore.rules`, and `storage.rules` are
-   all included in this folder.
+   `firebase.json`, `firestore.rules`, `storage.rules`, and
+   `database.rules.json` are included here.
 
 The security rules that get deployed:
 
 - **Firestore `messages`** — a sender can only create a message stamped with
   their own uid; only the addressed recipient can read it or mark it
   delivered.
-- **Firestore `users/{uid}`** — owner-only write; readable by any
-  authenticated user (the registration token is a routing id, not a secret).
 - **Storage `messages/{uid}/...`** — any authenticated user can upload; only
   the addressed recipient (`uid` in the path) can read.
+- **RTDB `signals/{uid}`** — any authenticated user can write (ring a peer's
+  doorbell); only the owner (`uid`) can read their own. The node holds only a
+  message id + timestamp, never payload.
 
 ## Install the extension
 
@@ -93,11 +101,10 @@ The security rules that get deployed:
 
 | Permission | Why |
 |---|---|
-| `storage`, `unlimitedStorage` | Peers, settings, auth tokens, and the local inbox (received images can be sizable). |
+| `storage`, `unlimitedStorage` | Peers, settings, auth tokens, and the local inbox metadata. |
 | `activeTab` | Capture a screenshot of the current tab when you click *Capture*. |
 | `notifications` | Tell you when a peer sends something. |
-| `alarms` | 30-minute reconcile fallback for missed pushes. |
-| `gcm` | Receive the push that wakes the service worker (true push). |
+| `alarms` | ~1-minute poll that delivers messages while the extension is idle. |
 | `host_permissions` (googleapis.com) | Talk to your Firebase project (auth, Firestore, Storage). |
 
 ## Caveats
@@ -105,7 +112,9 @@ The security rules that get deployed:
 - Requires the user-provisioned Firebase project described above; without it
   the popup/options show a clear "not configured" state and make no network
   calls.
-- GCM delivery is best-effort; the reconcile alarm (every 30 min) backstops
-  any push that doesn't arrive.
+- Delivery latency: ~0.1–0.4s while the popup/options page is open (RTDB
+  doorbell stream); up to ~1 minute when fully idle/closed (then a
+  notification fires). Sub-second delivery to a fully-closed browser is not
+  possible without a server push, by design.
 - Payloads pass through your Firebase project in plaintext (end-to-end
   encryption is a future enhancement — see the architecture doc).

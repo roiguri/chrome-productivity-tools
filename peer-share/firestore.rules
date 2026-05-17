@@ -12,13 +12,5 @@ service cloud.firestore {
         && resource.data.to == request.auth.uid;
     }
 
-    // chrome.gcm registration tokens. Owner writes their own; any
-    // authenticated user may read (needed so a sender's flow / the push
-    // function can resolve a recipient's token). The token is a routing id,
-    // not a credential.
-    match /users/{uid} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null && request.auth.uid == uid;
-    }
   }
 }

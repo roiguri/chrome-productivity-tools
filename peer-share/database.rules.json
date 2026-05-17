@@ -1,0 +1,10 @@
+{
+  "rules": {
+    "signals": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null"
+      }
+    }
+  }
+}

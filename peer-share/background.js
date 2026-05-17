@@ -1,11 +1,16 @@
 /*
  * background.js — MV3 service worker.
  *
- * Responsibilities:
+ * Delivery is poll-based (no Cloud Function, no FCM, no chrome.gcm):
  *   - anonymous Firebase sign-in on install/startup
- *   - register with chrome.gcm and publish the token to users/{uid}
- *   - receive pushes (chrome.gcm.onMessage) -> fetch + store into the inbox
- *   - a low-frequency alarm that reconciles anything a push missed
+ *   - a chrome.alarms poll (~1 min) wakes the worker to reconcile() — pulls
+ *     anything addressed to us that isn't already in the inbox
+ *   - while a popup/options page is open it pings ps-poll-now every ~2s for
+ *     near-instant delivery (and to keep this worker warm)
+ *   - ingest stores message metadata immediately; media bytes are fetched
+ *     lazily into IndexedDB (fast inbox, no giant base64 in storage)
+ *   - ALL ps_inbox writes are serialized here (single-writer) so a received
+ *     message can never be clobbered by a concurrent popup mutation
  *   - keep the toolbar badge in sync with the unread count
  */
 importScripts('firebase-config.js', 'firebase.js');
@@ -17,10 +22,7 @@ importScripts('firebase-config.js', 'firebase.js');
 
   var INBOX_KEY = 'ps_inbox';
   var SETTINGS_KEY = 'ps_settings';
-  var GCM_TOKEN_KEY = 'ps_gcm_token';
-  var GCM_PUBLISHED_KEY = 'ps_gcm_published'; // { uid, token }
-  var RECONCILE_ALARM = 'ps-reconcile';
-  var REGISTER_ALARM = 'ps-register-retry';
+  var POLL_ALARM = 'ps-poll';
   var DEFAULT_RETENTION = 50;
 
   function storageGet(keys) {
@@ -33,25 +35,6 @@ importScripts('firebase-config.js', 'firebase.js');
     return new Promise(function (resolve) {
       chrome.storage.local.set(obj, resolve);
     });
-  }
-
-  function arrayBufferToBase64(buffer) {
-    var bytes = new Uint8Array(buffer);
-    var binary = '';
-    var chunk = 0x8000;
-    for (var i = 0; i < bytes.length; i += chunk) {
-      binary += String.fromCharCode.apply(
-        null,
-        bytes.subarray(i, i + chunk)
-      );
-    }
-    return btoa(binary);
-  }
-
-  async function blobToDataUrl(blob) {
-    var buf = await blob.arrayBuffer();
-    var type = blob.type || 'application/octet-stream';
-    return 'data:' + type + ';base64,' + arrayBufferToBase64(buf);
   }
 
   async function getRetention() {
@@ -71,165 +54,167 @@ importScripts('firebase-config.js', 'firebase.js');
     }
   }
 
-  // ---- gcm registration -----------------------------------------------------
+  // ---- media blob store (IndexedDB) -----------------------------------------
+  // chrome.storage.local can't hold Blobs and base64 there is huge/slow.
+  // Received payload bytes live in IndexedDB keyed by message id.
 
-  function sleep(ms) {
-    return new Promise(function (r) { setTimeout(r, ms); });
+  var mediaDb = null;
+
+  function openMediaDb() {
+    if (mediaDb) return Promise.resolve(mediaDb);
+    return new Promise(function (resolve, reject) {
+      var req = indexedDB.open('peer-share-media', 1);
+      req.onupgradeneeded = function (e) {
+        e.target.result.createObjectStore('blobs');
+      };
+      req.onsuccess = function (e) { mediaDb = e.target.result; resolve(mediaDb); };
+      req.onerror = function (e) { reject(e.target.error); };
+    });
   }
 
-  function gcmRegister(senderId) {
-    return new Promise(function (resolve, reject) {
-      chrome.gcm.register([senderId], function (registrationId) {
-        if (chrome.runtime.lastError) {
-          reject(new Error(chrome.runtime.lastError.message));
-          return;
-        }
-        resolve(registrationId);
+  function storeMediaBlob(id, blob) {
+    return openMediaDb().then(function (db) {
+      return new Promise(function (resolve, reject) {
+        var tx = db.transaction('blobs', 'readwrite');
+        tx.objectStore('blobs').put(blob, id);
+        tx.oncomplete = function () { resolve(); };
+        tx.onerror = function (e) { reject(e.target.error); };
       });
     });
   }
 
-  // chrome.gcm.register is flaky on a cold service worker — it commonly
-  // rejects with "Asynchronous operation is pending" (a prior registration
-  // from an earlier worker lifetime is still settling). A single attempt
-  // therefore frequently fails, and without a retry the recipient never
-  // publishes a token, so the Cloud Function can never push to them. Retry
-  // with backoff across a few attempts; the REGISTER_ALARM is the durable
-  // backstop that survives worker eviction.
-  async function acquireToken(senderId) {
-    var delays = [0, 3000, 8000, 15000];
-    var lastErr;
-    for (var i = 0; i < delays.length; i++) {
-      if (delays[i]) await sleep(delays[i]);
-      try {
-        var t = await gcmRegister(senderId);
-        if (t) return t;
-        lastErr = new Error('empty registration id');
-      } catch (e) {
-        lastErr = e;
-        console.warn('[Peer Share] gcm register attempt ' + (i + 1) +
-          ' failed: ' + e.message);
-      }
-    }
-    throw lastErr || new Error('gcm registration failed');
-  }
-
-  async function alreadyPublished(uid, token) {
-    var p = (await storageGet([GCM_PUBLISHED_KEY]))[GCM_PUBLISHED_KEY];
-    return !!p && p.uid === uid && p.token === token;
-  }
-
-  // Returns true only once the recipient's token is confirmed written to
-  // users/{uid}. Token acquisition and the Firestore publish are decoupled
-  // so a failed publish still gets retried even when the token is unchanged.
-  async function doEnsureRegistered() {
-    if (!FB.isConfigured()) return false;
-    try {
-      var senderId = self.FIREBASE_CONFIG.messagingSenderId;
-      var uid = await FB.getUid();
-      var token = await acquireToken(senderId);
-      if (await alreadyPublished(uid, token)) return true;
-      await FB.firestoreSet('users/' + uid, {
-        gcmToken: token,
-        updatedAt: Date.now()
+  function deleteMediaBlob(id) {
+    return openMediaDb().then(function (db) {
+      return new Promise(function (resolve, reject) {
+        var tx = db.transaction('blobs', 'readwrite');
+        tx.objectStore('blobs').delete(id);
+        tx.oncomplete = function () { resolve(); };
+        tx.onerror = function (e) { reject(e.target.error); };
       });
-      await storageSet({
-        ps_gcm_token: token,
-        ps_gcm_published: { uid: uid, token: token }
-      });
-      console.log('[Peer Share] push registration published for', uid);
-      return true;
-    } catch (e) {
-      console.warn('[Peer Share] gcm registration failed:', e.message);
-      return false;
-    }
+    });
   }
 
-  // Serialize registration: init() can run several times concurrently
-  // (module load + onInstalled/onStartup), and overlapping chrome.gcm.register
-  // calls fail with "Asynchronous operation is pending."
-  var registerInFlight = null;
+  // ---- single-writer inbox mutex --------------------------------------------
+  // Every ps_inbox mutation runs through here so concurrent writers (poll
+  // ingest, popup mark-read/delete, options clear) can't lose each other's
+  // updates. Same promise-chain idiom that used to guard gcm registration.
 
-  function ensureRegistered() {
-    if (registerInFlight) return registerInFlight;
-    registerInFlight = doEnsureRegistered().then(
-      function (ok) { registerInFlight = null; return ok; },
-      function () { registerInFlight = null; return false; }
-    );
-    return registerInFlight;
-  }
+  var inboxWriteChain = Promise.resolve();
 
-  // Register, and if it didn't succeed, schedule a self-healing retry alarm
-  // that keeps trying (and survives worker eviction) until it does. Clears
-  // the alarm once the token is confirmed published.
-  async function ensureRegisteredWithBackstop() {
-    var ok = await ensureRegistered();
-    if (ok) {
-      chrome.alarms.clear(REGISTER_ALARM);
-    } else {
-      chrome.alarms.create(REGISTER_ALARM, {
-        delayInMinutes: 1,
-        periodInMinutes: 1
-      });
-    }
-    return ok;
+  function serialInboxWrite(fn) {
+    var run = inboxWriteChain.then(fn, fn);
+    inboxWriteChain = run.then(function () {}, function () {});
+    return run;
   }
 
   // ---- message ingestion ----------------------------------------------------
 
-  // Fetch a message doc, download its payload, and push it into the inbox.
+  // Fast path: store metadata immediately so the inbox entry + notification
+  // appear instantly. Media bytes are fetched lazily afterwards.
   // Idempotent: a message already in the inbox is skipped.
   async function ingestMessage(messageId) {
     var uid = await FB.getUid();
     var msg = await FB.firestoreGet('messages/' + messageId);
     if (!msg || msg.to !== uid) return;
 
-    var inbox = (await storageGet([INBOX_KEY]))[INBOX_KEY] || [];
-    if (inbox.some(function (m) { return m.id === messageId; })) return;
+    await serialInboxWrite(async function () {
+      var inbox = (await storageGet([INBOX_KEY]))[INBOX_KEY] || [];
+      if (inbox.some(function (m) { return m.id === messageId; })) return;
 
-    var item = {
-      id: messageId,
-      from: msg.from || '',
-      type: msg.type || 'text',
-      caption: msg.caption || '',
-      ts: msg.ts || Date.now(),
-      read: false
-    };
+      var item = {
+        id: messageId,
+        from: msg.from || '',
+        type: msg.type || 'text',
+        caption: msg.caption || '',
+        ts: msg.ts || Date.now(),
+        read: false
+      };
 
-    if (msg.type === 'text') {
-      item.text = msg.text || '';
-    } else {
-      var blob = await FB.storageDownload(msg.storagePath);
-      item.fileName = msg.fileName || 'shared-file';
-      item.mimeType = msg.mimeType || blob.type || 'application/octet-stream';
-      item.dataUrl = await blobToDataUrl(blob);
-    }
+      if (msg.type === 'text') {
+        item.text = msg.text || '';
+      } else {
+        item.storagePath = msg.storagePath;
+        item.fileName = msg.fileName || 'shared-file';
+        item.mimeType = msg.mimeType || 'application/octet-stream';
+        item.mediaReady = false;
+      }
 
-    var retention = await getRetention();
-    inbox.unshift(item);
-    if (inbox.length > retention) inbox = inbox.slice(0, retention);
-    await storageSet({ ps_inbox: inbox });
+      var retention = await getRetention();
+      inbox.unshift(item);
+      var dropped = [];
+      if (inbox.length > retention) {
+        dropped = inbox.slice(retention);
+        inbox = inbox.slice(0, retention);
+      }
+      await storageSet({ ps_inbox: inbox });
+      dropped.forEach(function (d) {
+        if (d.storagePath) deleteMediaBlob(d.id).catch(function () {});
+      });
 
-    try {
-      await FB.firestoreSet('messages/' + messageId, { delivered: true });
-    } catch (e) {
-      console.warn('[Peer Share] could not mark delivered:', e.message);
-    }
+      try {
+        await FB.firestoreSet('messages/' + messageId, { delivered: true });
+      } catch (e) {
+        console.warn('[Peer Share] could not mark delivered:', e.message);
+      }
 
-    var label = item.type === 'text'
-      ? 'New text message'
-      : (item.type === 'image' ? 'New screenshot' : 'New file');
-    chrome.notifications.create('ps-' + messageId, {
-      type: 'basic',
-      iconUrl: 'icons/icon128.png',
-      title: 'Peer Share',
-      message: item.caption ? label + ': ' + item.caption : label
+      var label = item.type === 'text'
+        ? 'New text message'
+        : (item.type === 'image' ? 'New screenshot' : 'New file');
+      chrome.notifications.create('ps-' + messageId, {
+        type: 'basic',
+        iconUrl: 'icons/icon128.png',
+        title: 'Peer Share',
+        message: item.caption ? label + ': ' + item.caption : label
+      });
+
+      await updateBadge();
     });
 
-    await updateBadge();
+    if (msg.type !== 'text') {
+      fetchAndStoreMedia(messageId).catch(function (e) {
+        console.warn('[Peer Share] media prefetch failed:', e.message);
+      });
+    }
   }
 
-  // Safety net: pull anything addressed to us that a push didn't deliver.
+  // Download a message's payload into IndexedDB and flip mediaReady. The
+  // (slow) network download happens OUTSIDE the inbox mutex; only the short
+  // flag flip is serialized. Deduped per id so a popup request and the
+  // background prefetch don't double-download.
+  var mediaFetchInFlight = {};
+
+  function fetchAndStoreMedia(messageId) {
+    if (mediaFetchInFlight[messageId]) return mediaFetchInFlight[messageId];
+    var p = (async function () {
+      var inbox = (await storageGet([INBOX_KEY]))[INBOX_KEY] || [];
+      var item = null;
+      inbox.forEach(function (m) { if (m.id === messageId) item = m; });
+      if (!item || !item.storagePath || item.mediaReady) return;
+      var blob = await FB.storageDownload(item.storagePath);
+      await storeMediaBlob(messageId, blob);
+      await serialInboxWrite(async function () {
+        var inb = (await storageGet([INBOX_KEY]))[INBOX_KEY] || [];
+        var changed = false;
+        inb.forEach(function (m) {
+          if (m.id === messageId) {
+            m.mediaReady = true;
+            if (!m.mimeType && blob.type) m.mimeType = blob.type;
+            changed = true;
+          }
+        });
+        if (changed) await storageSet({ ps_inbox: inb });
+      });
+    })();
+    mediaFetchInFlight[messageId] = p;
+    p.then(
+      function () { delete mediaFetchInFlight[messageId]; },
+      function () { delete mediaFetchInFlight[messageId]; }
+    );
+    return p;
+  }
+
+  // Pull anything addressed to us that isn't already in the inbox. This is
+  // the delivery mechanism (driven by the poll alarm + popup ps-poll-now).
   async function reconcile() {
     if (!FB.isConfigured()) return;
     try {
@@ -271,8 +256,7 @@ importScripts('firebase-config.js', 'firebase.js');
     } catch (e) {
       console.warn('[Peer Share] sign-in failed:', e.message);
     }
-    await ensureRegisteredWithBackstop();
-    chrome.alarms.create(RECONCILE_ALARM, { periodInMinutes: 30 });
+    chrome.alarms.create(POLL_ALARM, { periodInMinutes: 1 });
     await reconcile();
     await updateBadge();
   }
@@ -285,36 +269,73 @@ importScripts('firebase-config.js', 'firebase.js');
     init(false);
   });
 
-  chrome.gcm.onMessage.addListener(function (message) {
-    var data = message && message.data ? message.data : {};
-    if (data.messageId) {
-      ingestMessage(data.messageId).catch(function (e) {
-        console.warn('[Peer Share] ingest failed:', e.message);
-      });
-    }
-  });
-
   chrome.alarms.onAlarm.addListener(function (alarm) {
-    if (alarm.name === RECONCILE_ALARM) reconcile();
-    else if (alarm.name === REGISTER_ALARM) ensureRegisteredWithBackstop();
+    if (alarm.name === POLL_ALARM) reconcile();
   });
 
-  // Lets the options page show push-registration status and trigger a
-  // manual retry — gives the recipient a deterministic way to repair
-  // registration without waiting for the next alarm tick.
+  // Inbox is single-writer: popup/options send intents; only this worker
+  // mutates ps_inbox. ps-poll-now drives the fast active-delivery path.
   chrome.runtime.onMessage.addListener(function (req, sender, sendResponse) {
     if (!req || !req.type) return;
-    if (req.type === 'ps-push-status') {
-      storageGet([GCM_PUBLISHED_KEY]).then(function (s) {
-        var p = s[GCM_PUBLISHED_KEY];
-        sendResponse({ registered: !!(p && p.token) });
-      });
+
+    if (req.type === 'ps-poll-now') {
+      reconcile().then(
+        function () { sendResponse({ ok: true }); },
+        function (e) { sendResponse({ ok: false, error: e.message }); }
+      );
       return true;
     }
-    if (req.type === 'ps-retry-push') {
-      ensureRegisteredWithBackstop().then(function (ok) {
-        sendResponse({ registered: ok });
-      });
+
+    if (req.type === 'ps-inbox-mark-read') {
+      serialInboxWrite(async function () {
+        var inbox = (await storageGet([INBOX_KEY]))[INBOX_KEY] || [];
+        var changed = false;
+        inbox.forEach(function (m) {
+          if (!m.read) { m.read = true; changed = true; }
+        });
+        if (changed) await storageSet({ ps_inbox: inbox });
+        await updateBadge();
+      }).then(
+        function () { sendResponse({ ok: true }); },
+        function (e) { sendResponse({ ok: false, error: e.message }); }
+      );
+      return true;
+    }
+
+    if (req.type === 'ps-inbox-delete') {
+      serialInboxWrite(async function () {
+        var inbox = (await storageGet([INBOX_KEY]))[INBOX_KEY] || [];
+        inbox = inbox.filter(function (m) { return m.id !== req.id; });
+        await storageSet({ ps_inbox: inbox });
+        deleteMediaBlob(req.id).catch(function () {});
+        await updateBadge();
+      }).then(
+        function () { sendResponse({ ok: true }); },
+        function (e) { sendResponse({ ok: false, error: e.message }); }
+      );
+      return true;
+    }
+
+    if (req.type === 'ps-inbox-clear') {
+      serialInboxWrite(async function () {
+        var inbox = (await storageGet([INBOX_KEY]))[INBOX_KEY] || [];
+        inbox.forEach(function (m) {
+          if (m.storagePath) deleteMediaBlob(m.id).catch(function () {});
+        });
+        await storageSet({ ps_inbox: [] });
+        await updateBadge();
+      }).then(
+        function () { sendResponse({ ok: true }); },
+        function (e) { sendResponse({ ok: false, error: e.message }); }
+      );
+      return true;
+    }
+
+    if (req.type === 'ps-inbox-fetch-media') {
+      fetchAndStoreMedia(req.id).then(
+        function () { sendResponse({ ok: true }); },
+        function (e) { sendResponse({ ok: false, error: e.message }); }
+      );
       return true;
     }
   });

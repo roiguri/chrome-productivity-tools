@@ -9,8 +9,7 @@
     "unlimitedStorage",
     "activeTab",
     "notifications",
-    "alarms",
-    "gcm"
+    "alarms"
   ],
 
   "host_permissions": [

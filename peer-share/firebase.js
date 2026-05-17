@@ -305,10 +305,102 @@
     return res.blob();
   }
 
+  // ---- Realtime Database (optional real-time "doorbell") --------------------
+
+  function rtdbBase() {
+    return root.FIREBASE_RTDB_URL ? root.FIREBASE_RTDB_URL() : null;
+  }
+
+  // Write a small signal node. `path` is e.g. "signals/<uid>". Best-effort:
+  // a failure here only costs the recipient a slightly later poll.
+  async function rtdbPut(path, data) {
+    var base = rtdbBase();
+    if (!base) return false;
+    var token = await getValidToken();
+    var url = base + '/' + path + '.json?auth=' + encodeURIComponent(token);
+    var res = await fetch(url, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    if (!res.ok) {
+      throw new Error('RTDB write failed (' + res.status + ')');
+    }
+    return true;
+  }
+
+  // Full streaming URL for a signal node, with a fresh auth token. The
+  // recipient opens this as an EventSource (RTDB returns text/event-stream).
+  async function rtdbSignalUrl(uid) {
+    var base = rtdbBase();
+    if (!base) return null;
+    var token = await getValidToken();
+    return base + '/signals/' + encodeURIComponent(uid) +
+      '.json?auth=' + encodeURIComponent(token);
+  }
+
+  // Open a resilient stream on signals/<myUid>. Calls onRing() whenever the
+  // node changes to a non-null value (a peer rang the doorbell). Auto
+  // reconnects with backoff and refreshes the auth token (RTDB sends
+  // auth_revoked when the ~1h ID token expires). Returns a stop() function.
+  // Only usable where EventSource exists (extension pages, not the SW).
+  function subscribeDoorbell(onRing) {
+    if (!rtdbBase() || typeof EventSource === 'undefined') return null;
+    var es = null;
+    var stopped = false;
+    var backoff = 1000;
+
+    function handle(ev) {
+      try {
+        var payload = JSON.parse(ev.data);
+        if (payload && payload.data !== null &&
+            payload.data !== undefined) {
+          backoff = 1000;
+          onRing();
+        }
+      } catch (e) { /* keep-alive / non-JSON: ignore */ }
+    }
+
+    async function connect() {
+      if (stopped) return;
+      try {
+        var uid = await getUid();
+        var url = await rtdbSignalUrl(uid);
+        if (!url || stopped) return;
+        es = new EventSource(url);
+        es.addEventListener('put', handle);
+        es.addEventListener('patch', handle);
+        es.addEventListener('cancel', reconnect);
+        es.addEventListener('auth_revoked', reconnect);
+        es.onerror = reconnect;
+      } catch (e) {
+        reconnect();
+      }
+    }
+
+    function reconnect() {
+      if (stopped) return;
+      if (es) { es.close(); es = null; }
+      var wait = backoff;
+      backoff = Math.min(backoff * 2, 30000);
+      setTimeout(connect, wait);
+    }
+
+    connect();
+    return function stop() {
+      stopped = true;
+      if (es) { es.close(); es = null; }
+    };
+  }
+
   root.PeerShareFirebase = {
     isConfigured: function () {
       return !!root.FIREBASE_CONFIG_IS_SET && root.FIREBASE_CONFIG_IS_SET();
     },
+    rtdbEnabled: function () {
+      return !!rtdbBase();
+    },
+    subscribeDoorbell: subscribeDoorbell,
     signInAnonymously: signInAnonymously,
     getValidToken: getValidToken,
     getUid: getUid,
@@ -317,6 +409,8 @@
     firestoreSet: firestoreSet,
     firestoreQueryEqual: firestoreQueryEqual,
     storageUpload: storageUpload,
-    storageDownload: storageDownload
+    storageDownload: storageDownload,
+    rtdbPut: rtdbPut,
+    rtdbSignalUrl: rtdbSignalUrl
   };
 })(typeof self !== 'undefined' ? self : this);
