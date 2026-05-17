@@ -26,7 +26,8 @@
     trayCount: document.getElementById('trayCount'),
     clearTrayBtn: document.getElementById('clearTrayBtn'),
     sendBtn: document.getElementById('sendBtn'),
-    inboxList: document.getElementById('inboxList')
+    inboxList: document.getElementById('inboxList'),
+    inboxRequests: document.getElementById('inboxRequests')
   };
 
   // Staged attachments: { kind:'image'|'file', blob, fileName, mimeType }.
@@ -209,7 +210,7 @@
     el.tabInbox.classList.toggle('active', !send);
     el.sendView.style.display = send ? 'block' : 'none';
     el.inboxView.style.display = send ? 'none' : 'block';
-    if (!send) renderInbox();
+    if (!send) { renderInbox(); renderRequests(); }
     saveDraftLight();
   }
 
@@ -539,10 +540,86 @@
 
   var renderToken = 0;
 
+  function peerName(peers, code) {
+    var hit = null;
+    peers.forEach(function (p) { if (p.code === code) hit = p; });
+    if (hit) return hit.nickname;
+    return 'Unknown (' + String(code || '').slice(0, 8) + '…)';
+  }
+
+  function genPeerId() {
+    return 'peer_' + Date.now() + '_' + Math.random().toString(36).slice(2, 9);
+  }
+
+  // Incoming friend requests (RTDB contacts/<myUid>), shown atop the Inbox
+  // with inline naming (window.prompt would dismiss the popup).
+  async function renderRequests() {
+    if (!FB.isConfigured() || !FB.rtdbEnabled()) {
+      el.inboxRequests.innerHTML = '';
+      return;
+    }
+    var myUid, obj, peers;
+    try {
+      myUid = await FB.getUid();
+      obj = (await FB.rtdbGet('contacts/' + myUid)) || {};
+      peers = (await storageGet([PEERS_KEY]))[PEERS_KEY] || [];
+    } catch (e) {
+      el.inboxRequests.innerHTML = '';
+      return;
+    }
+    var codes = Object.keys(obj).filter(function (c) {
+      return !peers.some(function (p) { return p.code === c; });
+    });
+    if (!codes.length) { el.inboxRequests.innerHTML = ''; return; }
+    el.inboxRequests.innerHTML = '';
+    codes.forEach(function (code) {
+      var card = document.createElement('div');
+      card.className = 'inbox-item req-card';
+      card.innerHTML =
+        '<div class="req-title">Connection request</div>' +
+        '<div class="req-code">' + escapeHtml(code) + '</div>' +
+        '<input class="req-input" type="text" placeholder="Name this contact">' +
+        '<div class="inbox-actions">' +
+        '<button data-act="accept">Accept</button>' +
+        '<button class="danger" data-act="ignore">Ignore</button></div>';
+      var input = card.querySelector('.req-input');
+      card.querySelector('.inbox-actions').addEventListener('click',
+        function (ev) {
+          var act = ev.target.dataset.act;
+          if (act === 'accept') acceptRequest(code, input.value, myUid);
+          else if (act === 'ignore') ignoreRequest(code, myUid);
+        });
+      el.inboxRequests.appendChild(card);
+    });
+  }
+
+  async function acceptRequest(code, name, myUid) {
+    name = (name || '').trim() || (String(code).slice(0, 8) + '…');
+    var peers = (await storageGet([PEERS_KEY]))[PEERS_KEY] || [];
+    if (!peers.some(function (p) { return p.code === code; })) {
+      peers.push({ id: genPeerId(), nickname: name, code: code });
+      await storageSet({ ps_peers: peers });
+    }
+    try { await FB.rtdbDelete('contacts/' + myUid + '/' + code); }
+    catch (e) { /* noop */ }
+    showStatus('Request accepted.', 'success');
+    renderRequests();
+    renderInbox();
+  }
+
+  async function ignoreRequest(code, myUid) {
+    try { await FB.rtdbDelete('contacts/' + myUid + '/' + code); }
+    catch (e) { /* noop */ }
+    showStatus('Request ignored.', 'success');
+    renderRequests();
+  }
+
   async function renderInbox() {
     var myToken = ++renderToken;
     revokeObjectUrls();
-    var inbox = (await storageGet([INBOX_KEY]))[INBOX_KEY] || [];
+    var store = await storageGet([INBOX_KEY, PEERS_KEY]);
+    var inbox = store[INBOX_KEY] || [];
+    var peers = store[PEERS_KEY] || [];
     if (myToken !== renderToken) return;
     if (!inbox.length) {
       el.inboxList.innerHTML =
@@ -560,7 +637,7 @@
 
       var when = new Date(m.ts).toLocaleString();
       var head = '<div class="inbox-meta"><span>From ' +
-        escapeHtml(String(m.from).slice(0, 8)) + '…</span><span>' +
+        escapeHtml(peerName(peers, m.from)) + '</span><span>' +
         escapeHtml(when) + '</span></div>';
       var cap = m.caption
         ? '<div class="inbox-caption">' + escapeHtml(m.caption) + '</div>'
@@ -713,6 +790,7 @@
     }
     var pollTimer = setInterval(function () {
       sendBg({ type: 'ps-poll-now' });
+      if (el.inboxView.style.display !== 'none') renderRequests();
     }, pollMs);
     window.addEventListener('unload', function () {
       clearInterval(pollTimer);

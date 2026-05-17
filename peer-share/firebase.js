@@ -329,6 +329,32 @@
     return true;
   }
 
+  // Read a node (REST GET). Returns the parsed value or null.
+  async function rtdbGet(path) {
+    var base = rtdbBase();
+    if (!base) return null;
+    var token = await getValidToken();
+    var url = base + '/' + path + '.json?auth=' + encodeURIComponent(token);
+    var res = await fetch(url, { method: 'GET' });
+    if (!res.ok) {
+      throw new Error('RTDB read failed (' + res.status + ')');
+    }
+    return res.json();
+  }
+
+  // Delete a node (REST DELETE).
+  async function rtdbDelete(path) {
+    var base = rtdbBase();
+    if (!base) return false;
+    var token = await getValidToken();
+    var url = base + '/' + path + '.json?auth=' + encodeURIComponent(token);
+    var res = await fetch(url, { method: 'DELETE' });
+    if (!res.ok) {
+      throw new Error('RTDB delete failed (' + res.status + ')');
+    }
+    return true;
+  }
+
   // Full streaming URL for a signal node, with a fresh auth token. The
   // recipient opens this as an EventSource (RTDB returns text/event-stream).
   async function rtdbSignalUrl(uid) {
@@ -411,6 +437,8 @@
     storageUpload: storageUpload,
     storageDownload: storageDownload,
     rtdbPut: rtdbPut,
+    rtdbGet: rtdbGet,
+    rtdbDelete: rtdbDelete,
     rtdbSignalUrl: rtdbSignalUrl
   };
 })(typeof self !== 'undefined' ? self : this);

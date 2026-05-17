@@ -273,6 +273,18 @@
     }
     .inbox-actions .danger { color: #dc3545; border-color: #f1b0b7; background: #fff; }
 
+    .req-card { border-color: #009efd; background: #f0f9ff; }
+    .req-title { font-weight: 600; font-size: 13px; margin-bottom: 4px; }
+    .req-code {
+      font-size: 11px; color: #6c757d; word-break: break-all;
+      margin-bottom: 8px;
+    }
+    .req-input {
+      width: 100%; padding: 7px 8px; border: 1px solid #ced4da;
+      border-radius: 4px; font-size: 12px; font-family: inherit;
+      box-sizing: border-box; margin-bottom: 8px;
+    }
+
     .link {
       color: #009efd;
       cursor: pointer;
@@ -350,6 +362,7 @@
 
     <!-- INBOX VIEW -->
     <div id="inboxView" style="display:none;">
+      <div id="inboxRequests"></div>
       <div id="inboxList"></div>
     </div>
   </div>

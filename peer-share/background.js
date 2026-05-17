@@ -186,11 +186,19 @@ importScripts('firebase-config.js', 'firebase.js');
       var label = item.type === 'text'
         ? 'New text message'
         : (item.type === 'image' ? 'New screenshot' : 'New file');
+      var peers = (await storageGet(['ps_peers']))['ps_peers'] || [];
+      var who = null;
+      peers.forEach(function (p) { if (p.code === item.from) who = p; });
+      var whoName = who
+        ? who.nickname
+        : String(item.from || '').slice(0, 8) + '…';
+      var body = (item.caption ? label + ': ' + item.caption : label) +
+        ' from ' + whoName;
       chrome.notifications.create('ps-' + messageId, {
         type: 'basic',
         iconUrl: 'icons/icon128.png',
         title: 'Peer Share',
-        message: item.caption ? label + ': ' + item.caption : label
+        message: body
       });
 
       await updateBadge();
@@ -254,9 +262,30 @@ importScripts('firebase-config.js', 'firebase.js');
         if (have[r.id] || r.data.delivered) continue;
         await ingestMessage(r.id);
       }
+      await checkContacts(uid);
     } catch (e) {
       console.warn('[Peer Share] reconcile failed:', e.message);
     }
+  }
+
+  // Notify (once) about new incoming friend requests.
+  async function checkContacts(uid) {
+    if (!FB.rtdbEnabled()) return;
+    try {
+      var obj = (await FB.rtdbGet('contacts/' + uid)) || {};
+      var codes = Object.keys(obj);
+      var seen = (await storageGet(['ps_seen_contacts']))
+        .ps_seen_contacts || [];
+      var fresh = codes.filter(function (c) {
+        return seen.indexOf(c) === -1;
+      });
+      await storageSet({ ps_seen_contacts: codes });
+      if (fresh.length) {
+        notify('ps-contact', fresh.length === 1
+          ? 'New connection request — open Options to accept'
+          : fresh.length + ' new connection requests — open Options');
+      }
+    } catch (e) { /* noop */ }
   }
 
   // ---- lifecycle ------------------------------------------------------------

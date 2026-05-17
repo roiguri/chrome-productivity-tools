@@ -122,6 +122,31 @@ recipient popup: storage.onChanged → re-render; image <img> src is a
   recipient whose uid is in the path.
 - **RTDB `signals/{uid}`** — authed write (any peer may ring you); read only
   by the owner. Default-deny everywhere else.
+- **RTDB `contacts/{uid}/{from}`** — owner-only read; requester (`$from`) or
+  owner may write. Holds a friend request (`{ ts }`), no payload.
+
+## Peer / friend-request lifecycle (intentional semantics)
+
+Identity is rules-based, not approval-based: **receiving requires only your
+own auth** (`messages.read if to == me`). Consequences, by design:
+
+- **A adds B** → A can send to B immediately; A also writes
+  `contacts/{B}/{A}` so B sees a request. B *receives A's messages right
+  away* (shown as `Unknown (code…)` until B has a name for A).
+- **B Accepts** → A is added to B's `ps_peers` (B-chosen name); the request
+  node is deleted. Now B→A works and both render real names.
+- **B Ignores** → only the request node is deleted. It is a *dismiss, not a
+  block*: A can still send to B (any holder of your code can), B just won't
+  have A as a contact and won't reply. A is not notified.
+- **Remove peer** (either side) → purely local (`ps_peers` only): stops your
+  *outbound* to them and the name mapping (their messages become
+  `Unknown`), but inbound from anyone holding your code still arrives. The
+  other side is not notified; re-adding by code re-sends a fresh request.
+
+A true block isn't possible without a backend (rules can't consult a
+per-recipient blocklist); the only client-side option would be an
+ingest-time ignore list (hide, not server-block). Accepted for the
+trusted-peers, your-own-project threat model.
 
 ## Trade-offs
 

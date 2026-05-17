@@ -20,6 +20,7 @@
     savePeerBtn: document.getElementById('savePeerBtn'),
     cancelPeerBtn: document.getElementById('cancelPeerBtn'),
     peersList: document.getElementById('peersList'),
+    pendingList: document.getElementById('pendingList'),
     retentionInput: document.getElementById('retentionInput'),
     saveSettingsBtn: document.getElementById('saveSettingsBtn'),
     clearInboxBtn: document.getElementById('clearInboxBtn')
@@ -159,6 +160,18 @@
     togglePeerForm(false);
     renderPeers();
     showStatus('Peer saved.', 'success');
+
+    // New peer: send them a friend request so they can add you back
+    // (best-effort; messaging still works one-way without it).
+    if (!id && FB.rtdbEnabled()) {
+      try {
+        var myUid = await FB.getUid();
+        if (myUid && code !== myUid) {
+          await FB.rtdbPut('contacts/' + code + '/' + myUid,
+            { ts: Date.now() });
+        }
+      } catch (e) { /* noop */ }
+    }
   }
 
   async function deletePeer(id) {
@@ -166,6 +179,79 @@
     await storageSet({ ps_peers: peers });
     renderPeers();
     showStatus('Peer removed.', 'success');
+  }
+
+  // ---- pending friend requests ----------------------------------------------
+
+  async function loadPending() {
+    if (!FB.rtdbEnabled()) {
+      el.pendingList.innerHTML =
+        '<p class="empty-state">Realtime Database not configured.</p>';
+      return;
+    }
+    var obj;
+    try {
+      var myUid = await FB.getUid();
+      obj = (await FB.rtdbGet('contacts/' + myUid)) || {};
+    } catch (e) {
+      el.pendingList.innerHTML =
+        '<p class="empty-state">Could not load requests.</p>';
+      return;
+    }
+    var codes = Object.keys(obj).filter(function (c) {
+      return !peers.some(function (p) { return p.code === c; });
+    });
+    if (!codes.length) {
+      el.pendingList.innerHTML =
+        '<p class="empty-state">No pending requests.</p>';
+      return;
+    }
+    el.pendingList.innerHTML = '';
+    codes.forEach(function (code) {
+      var row = document.createElement('div');
+      row.className = 'peer-item';
+      row.innerHTML =
+        '<div class="peer-info">' +
+        '<div class="peer-name">Wants to connect</div>' +
+        '<div class="peer-code">' + escapeHtml(code) + '</div>' +
+        '</div>' +
+        '<div class="peer-actions">' +
+        '<button class="btn btn-primary btn-small" data-act="accept">Accept</button>' +
+        '<button class="btn btn-secondary btn-small" data-act="ignore">Ignore</button>' +
+        '</div>';
+      row.querySelector('.peer-actions').addEventListener('click', function (e) {
+        var act = e.target.dataset.act;
+        if (act === 'accept') acceptRequest(code);
+        else if (act === 'ignore') ignoreRequest(code);
+      });
+      el.pendingList.appendChild(row);
+    });
+  }
+
+  async function acceptRequest(fromCode) {
+    var name = window.prompt('Name this contact:', '');
+    if (name === null) return; // cancelled
+    name = name.trim() || (String(fromCode).slice(0, 8) + '…');
+    if (!peers.some(function (p) { return p.code === fromCode; })) {
+      peers.push({ id: generateId(), nickname: name, code: fromCode });
+      await storageSet({ ps_peers: peers });
+      renderPeers();
+    }
+    try {
+      var myUid = await FB.getUid();
+      await FB.rtdbDelete('contacts/' + myUid + '/' + fromCode);
+    } catch (e) { /* noop */ }
+    loadPending();
+    showStatus('Request accepted.', 'success');
+  }
+
+  async function ignoreRequest(fromCode) {
+    try {
+      var myUid = await FB.getUid();
+      await FB.rtdbDelete('contacts/' + myUid + '/' + fromCode);
+    } catch (e) { /* noop */ }
+    loadPending();
+    showStatus('Request ignored.', 'success');
   }
 
   // ---- settings -------------------------------------------------------------
@@ -208,13 +294,17 @@
   el.clearInboxBtn.addEventListener('click', clearInbox);
 
   refreshFirebaseStatus();
-  loadPeers();
+  loadPeers().then(loadPending);
   loadSettings();
 
   // Deliver instantly while the options page is open too (same doorbell
-  // stream as the popup; falls back to a slow poll).
+  // stream as the popup; falls back to a slow poll). Also refresh pending
+  // friend requests on the same cadence.
   if (FB.isConfigured()) {
-    var poke = function () { chrome.runtime.sendMessage({ type: 'ps-poll-now' }); };
+    var poke = function () {
+      chrome.runtime.sendMessage({ type: 'ps-poll-now' });
+      loadPending();
+    };
     poke();
     var stopDoorbell = FB.rtdbEnabled()
       ? FB.subscribeDoorbell(poke)
