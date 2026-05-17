@@ -27,8 +27,32 @@
     clearTrayBtn: document.getElementById('clearTrayBtn'),
     sendBtn: document.getElementById('sendBtn'),
     inboxList: document.getElementById('inboxList'),
-    inboxRequests: document.getElementById('inboxRequests')
+    inboxRequests: document.getElementById('inboxRequests'),
+    lightbox: document.getElementById('lightbox'),
+    lightboxImg: document.getElementById('lightboxImg'),
+    lightboxClose: document.getElementById('lightboxClose')
   };
+
+  function openLightbox(url) {
+    if (!url) return;
+    el.lightboxImg.src = url;
+    el.lightbox.style.display = 'flex';
+  }
+
+  function closeLightbox() {
+    el.lightbox.style.display = 'none';
+    el.lightboxImg.removeAttribute('src'); // don't revoke; shared with thumb
+  }
+
+  el.lightboxClose.addEventListener('click', closeLightbox);
+  el.lightbox.addEventListener('click', function (e) {
+    if (e.target === el.lightbox) closeLightbox();
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && el.lightbox.style.display !== 'none') {
+      closeLightbox();
+    }
+  });
 
   // Staged attachments: { kind:'image'|'file', blob, fileName, mimeType }.
   // Typed text in #textInput is a separate (optional) item at send time.
@@ -285,6 +309,10 @@
         img.style.height = '100%';
         img.style.objectFit = 'cover';
         img.style.borderRadius = '4px';
+        img.className = 'clickable-img';
+        (function (u) {
+          img.addEventListener('click', function () { openLightbox(u); });
+        })(url);
         thumb.appendChild(img);
       } else {
         thumb.textContent = '📄';
@@ -709,6 +737,10 @@
             var img = document.createElement('img');
             img.alt = 'shared image';
             img.src = url;
+            img.className = 'clickable-img';
+            img.addEventListener('click', function () {
+              openLightbox(url);
+            });
             slot.appendChild(img);
           } else {
             slot.innerHTML =
