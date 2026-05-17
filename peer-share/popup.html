@@ -242,6 +242,7 @@
       font-size: 13px;
       max-height: 120px;
       overflow: auto;
+      text-align: start;
     }
     .inbox-item img {
       max-width: 100%;
@@ -338,7 +339,7 @@
         <button class="action btn-primary" id="sendBtn" disabled>Send</button>
 
         <label for="textInput">Message</label>
-        <textarea id="textInput"
+        <textarea id="textInput" dir="auto"
           placeholder="Type or paste text — or paste an image"></textarea>
 
         <label class="btn-ghost btn-block" for="fileInput">Attach files</label>

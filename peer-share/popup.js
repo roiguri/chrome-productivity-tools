@@ -666,7 +666,8 @@
 
       var bodyHtml = '';
       if (m.type === 'text') {
-        bodyHtml = '<div class="inbox-text">' + escapeHtml(m.text) + '</div>';
+        bodyHtml = '<div class="inbox-text" dir="auto">' +
+          escapeHtml(m.text) + '</div>';
       } else if (m.type === 'image') {
         bodyHtml = '<div class="inbox-media" data-media="1">' +
           '<span class="inbox-loading">Loading image…</span></div>';
