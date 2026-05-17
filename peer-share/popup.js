@@ -676,17 +676,24 @@
           escapeHtml(m.fileName || 'file') + '</div>';
       }
 
+      var actBtns;
+      if (m.type === 'text') {
+        actBtns = '<button data-act="copy">Copy</button>';
+      } else if (m.type === 'image') {
+        actBtns = '<button data-act="copyimg">Copy</button>' +
+          '<button data-act="save">Save</button>';
+      } else {
+        actBtns = '<button data-act="save">Save</button>';
+      }
       card.innerHTML = head + cap + bodyHtml +
-        '<div class="inbox-actions">' +
-        (m.type === 'text'
-          ? '<button data-act="copy">Copy</button>'
-          : '<button data-act="save">Save</button>') +
+        '<div class="inbox-actions">' + actBtns +
         '<button class="danger" data-act="delete">Delete</button></div>';
 
       var actions = card.querySelector('.inbox-actions');
       actions.addEventListener('click', function (ev) {
         var act = ev.target.dataset.act;
         if (act === 'copy') copyText(m.text);
+        else if (act === 'copyimg') copyImage(m);
         else if (act === 'save') saveItem(m);
         else if (act === 'delete') deleteItem(m.id);
       });
@@ -727,6 +734,41 @@
     }, function () {
       showStatus('Could not copy.', 'error');
     });
+  }
+
+  // The Clipboard API only reliably accepts image/png, so transcode
+  // JPEG/etc. screenshots before writing.
+  async function toPngBlob(blob) {
+    if (blob.type === 'image/png') return blob;
+    var bmp = await createImageBitmap(blob);
+    var c = new OffscreenCanvas(bmp.width, bmp.height);
+    c.getContext('2d').drawImage(bmp, 0, 0);
+    return c.convertToBlob({ type: 'image/png' });
+  }
+
+  async function copyImage(m) {
+    showStatus('Copying image…', 'info');
+    try {
+      var blob = await loadMediaBlob(m.id).catch(function () { return null; });
+      if (!blob && !m.dataUrl) {
+        await sendBg({ type: 'ps-inbox-fetch-media', id: m.id });
+        blob = await loadMediaBlob(m.id).catch(function () { return null; });
+      }
+      if (!blob && m.dataUrl) {
+        blob = await (await fetch(m.dataUrl)).blob();
+      }
+      if (!blob) {
+        showStatus('Image not ready — try again in a moment.', 'error');
+        return;
+      }
+      var png = await toPngBlob(blob);
+      await navigator.clipboard.write([
+        new ClipboardItem({ 'image/png': png })
+      ]);
+      showStatus('Image copied to clipboard.', 'success');
+    } catch (e) {
+      showStatus('Could not copy image: ' + e.message, 'error');
+    }
   }
 
   async function saveItem(m) {
