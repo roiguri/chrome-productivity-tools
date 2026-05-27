@@ -31,11 +31,11 @@
   'use strict';
 
   root.FIREBASE_CONFIG = {
-    apiKey: 'AIzaSyAQ0oXvUCE3Uf7jnxsV6nYACIah7UnqfrU',
-    projectId: 'peer-share-1f592',
-    storageBucket: 'peer-share-1f592.firebasestorage.app',
-    messagingSenderId: '483281090336',
-    databaseURL: 'https://peer-share-1f592-default-rtdb.firebaseio.com'
+    apiKey: 'PASTE_API_KEY_HERE',
+    projectId: 'PASTE_PROJECT_ID_HERE',
+    storageBucket: 'PASTE_STORAGE_BUCKET_HERE',
+    messagingSenderId: 'PASTE_MESSAGING_SENDER_ID_HERE',
+    databaseURL: 'PASTE_DATABASE_URL_HERE'
   };
 
   root.FIREBASE_CONFIG_IS_SET = function () {
