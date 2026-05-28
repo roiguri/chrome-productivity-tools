@@ -3,17 +3,10 @@
 A collection of lightweight Chrome extensions for enhancing productivity in web applications.
 
 
-<p align="center">
-  <a href="./equation-shortcut/"><img src="./equation-shortcut/icons/icon128.png" width="80" alt="Equation Shortcut" /><br>Equation Shortcut</a>
-  &nbsp;&nbsp;&nbsp;
-  <a href="./autofill/"><img src="./autofill/icons/icon128.png" width="80" alt="Form Autofill" /><br>Form Autofill</a>
-  &nbsp;&nbsp;&nbsp;
-  <a href="./gibberish-fixer/"><img src="./gibberish-fixer/icons/icon128.png" width="80" alt="Gibberish Fixer" /><br>Gibberish Fixer</a>
-  &nbsp;&nbsp;&nbsp;
-  <a href="./direction-switcher/"><img src="./direction-switcher/icons/icon128.png" width="80" alt="Direction Switcher" /><br>Direction Switcher</a>
-  &nbsp;&nbsp;&nbsp;
-  <a href="./peer-share/"><img src="./peer-share/icons/icon128.png" width="80" alt="Peer Share" /><br>Peer Share</a>
-</p>
+
+| <a href="./equation-shortcut/"><img src="./equation-shortcut/icons/icon128.png" width="80" height="80" alt="Equation Shortcut" /></a> | <a href="./autofill/"><img src="./autofill/icons/icon128.png" width="80" height="80" alt="Form Autofill" /></a> | <a href="./gibberish-fixer/"><img src="./gibberish-fixer/icons/icon128.png" width="80" height="80" alt="Gibberish Fixer" /></a> | <a href="./direction-switcher/"><img src="./direction-switcher/icons/icon128.png" width="80" height="80" alt="Direction Switcher" /></a> | <a href="./peer-share/"><img src="./peer-share/icons/icon128.png" width="80" height="80" alt="Peer Share" /></a> |
+|:---:|:---:|:---:|:---:|:---:|
+| [Equation Shortcut](./equation-shortcut/) | [Form Autofill](./autofill/) | [Gibberish Fixer](./gibberish-fixer/) | [Direction Switcher](./direction-switcher/) | [Peer Share](./peer-share/) |
 
 ## Extensions
 
