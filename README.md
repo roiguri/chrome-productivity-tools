@@ -2,6 +2,29 @@
 
 A collection of lightweight Chrome extensions for enhancing productivity in web applications.
 
+
+
+
+
+<div align="center">
+<table border="0">
+  <tr>
+    <td align="center"><a href="./equation-shortcut/"><img src="./equation-shortcut/icons/icon128.png" width="70" height="70" alt="Equation Shortcut" /></a></td>
+    <td align="center"><a href="./autofill/"><img src="./autofill/icons/icon128.png" width="80" height="80" alt="Form Autofill" /></a></td>
+    <td align="center"><a href="./gibberish-fixer/"><img src="./gibberish-fixer/icons/icon128.png" width="65" height="65" alt="Gibberish Fixer" /></a></td>
+    <td align="center"><a href="./direction-switcher/"><img src="./direction-switcher/icons/icon128.png" width="82" height="82" alt="Direction Switcher" /></a></td>
+    <td align="center"><a href="./peer-share/"><img src="./peer-share/icons/icon128.png" width="65" height="65" alt="Peer Share" /></a></td>
+  </tr>
+  <tr>
+    <td align="center"><a href="./equation-shortcut/">Equation Shortcut</a></td>
+    <td align="center"><a href="./autofill/">Form Autofill</a></td>
+    <td align="center"><a href="./gibberish-fixer/">Gibberish Fixer</a></td>
+    <td align="center"><a href="./direction-switcher/">Direction Switcher</a></td>
+    <td align="center"><a href="./peer-share/">Peer Share</a></td>
+  </tr>
+</table>
+</div>
+
 ## Extensions
 
 ### Google Docs Equation Shortcut
