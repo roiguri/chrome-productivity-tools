@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Find Me</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      width: 350px;
+      margin: 0;
+      padding: 16px;
+      color: #333;
+    }
+    h1 {
+      font-size: 18px;
+      margin-top: 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: #4285F4;
+    }
+    button {
+      background-color: #4285F4;
+      color: white;
+      border: none;
+      padding: 8px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: bold;
+      width: 100%;
+      margin-bottom: 8px;
+    }
+    button:hover {
+      background-color: #3367d6;
+    }
+    button:disabled {
+      background-color: #ccc;
+      cursor: not-allowed;
+    }
+    select {
+      width: 100%;
+      padding: 8px;
+      margin-bottom: 12px;
+      border-radius: 4px;
+      border: 1px solid #ccc;
+    }
+    .section {
+      margin-bottom: 16px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid #eee;
+    }
+    .hidden {
+      display: none;
+    }
+    .error {
+      color: #d93025;
+      font-size: 12px;
+      margin-top: 4px;
+    }
+    .status {
+      font-size: 13px;
+      color: #5f6368;
+      margin-top: 8px;
+    }
+  </style>
+</head>
+<body>
+  <h1><img src="icons/icon48.png" width="24" height="24"> Find Me</h1>
+
+  <div id="auth-section" class="section">
+    <p>Connect Google Photos to select a reference album and enable saving.</p>
+    <button id="auth-btn">Sign in with Google</button>
+    <div id="auth-error" class="error hidden"></div>
+  </div>
+
+  <div id="main-section" class="section hidden">
+    <label for="album-select"><strong>1. Select Reference Face Album</strong></label>
+    <p style="font-size: 12px; color: #666; margin-top: 4px;">Choose an album containing clear photos of your face. We will use these to find you.</p>
+    <select id="album-select">
+      <option value="">Loading albums...</option>
+    </select>
+    <div id="album-status" class="status"></div>
+
+    <div style="margin-top: 16px;">
+      <label><strong>2. Scan Current Page</strong></label>
+      <button id="scan-btn" disabled>Scan This Page</button>
+      <div id="scan-status" class="status"></div>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,48 @@
+{
+  "manifest_version": 3,
+  "name": "Find Me",
+  "version": "1.0.0",
+  "description": "Finds photos of you on the current webpage and allows you to save them to Google Photos.",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "permissions": [
+    "identity",
+    "storage",
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://photoslibrary.googleapis.com/*"
+  ],
+  "oauth2": {
+    "client_id": "REPLACE_WITH_CLIENT_ID",
+    "scopes": [
+      "https://www.googleapis.com/auth/photoslibrary",
+      "https://www.googleapis.com/auth/photoslibrary.sharing"
+    ]
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["models/*", "face-api.js"],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';"
+  }
+}
