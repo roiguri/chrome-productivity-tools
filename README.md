@@ -14,6 +14,7 @@ A collection of lightweight Chrome extensions for enhancing productivity in web 
     <td align="center"><a href="./gibberish-fixer/"><img src="./gibberish-fixer/icons/icon128.png" width="65" height="65" alt="Gibberish Fixer" /></a></td>
     <td align="center"><a href="./direction-switcher/"><img src="./direction-switcher/icons/icon128.png" width="82" height="82" alt="Direction Switcher" /></a></td>
     <td align="center"><a href="./peer-share/"><img src="./peer-share/icons/icon128.png" width="65" height="65" alt="Peer Share" /></a></td>
+    <td align="center"><a href="./find-me/"><img src="./find-me/icons/icon128.png" width="65" height="65" alt="Find Me" /></a></td>
   </tr>
   <tr>
     <td align="center"><a href="./equation-shortcut/">Equation Shortcut</a></td>
@@ -21,6 +22,7 @@ A collection of lightweight Chrome extensions for enhancing productivity in web 
     <td align="center"><a href="./gibberish-fixer/">Gibberish Fixer</a></td>
     <td align="center"><a href="./direction-switcher/">Direction Switcher</a></td>
     <td align="center"><a href="./peer-share/">Peer Share</a></td>
+    <td align="center"><a href="./find-me/">Find Me</a></td>
   </tr>
 </table>
 </div>
@@ -113,6 +115,22 @@ Send a screenshot of the current tab, a file, or pasted text straight to a paire
 
 ---
 
+### Find Me
+📁 [`find-me/`](./find-me/)
+
+Finds photos of you on the current webpage and allows you to save them to Google Photos. Processed locally for privacy.
+
+- **Status:** 🚧 In Development
+- **Version:** 1.0.0
+- **Features:**
+  - Local facial recognition in browser
+  - Integrates with Google Photos
+  - Discovers photos on active tabs
+
+[📖 Read more →](./find-me/README.md)
+
+---
+
 ## Installation
 
 Each extension is self-contained in its own directory. To install:
@@ -136,6 +154,7 @@ chrome-productivity-tools/
 ├── gibberish-fixer/       # Hebrew-English Text Swapper extension
 ├── direction-switcher/    # Text Direction (RTL/LTR) toggler
 ├── peer-share/            # Screenshot/file/text peer sharing extension
+├── find-me/               # AI photo finder and Google Photos uploader
 └── README.md             # This file
 ```
 
