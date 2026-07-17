@@ -32,19 +32,47 @@ document.addEventListener('DOMContentLoaded', () => {
     toggleSettingsBtn.setAttribute('aria-expanded', String(!isHidden));
   });
 
+  const LEN_MIN = Number(lengthSlider.min);
+  const LEN_MAX = Number(lengthSlider.max);
+
   // Paint the slider so the gradient fills only up to the thumb
   function updateSliderFill() {
-    const min = Number(lengthSlider.min);
-    const max = Number(lengthSlider.max);
-    const pct = ((Number(lengthSlider.value) - min) / (max - min)) * 100;
+    const pct = ((Number(lengthSlider.value) - LEN_MIN) / (LEN_MAX - LEN_MIN)) * 100;
     lengthSlider.style.setProperty('--fill', pct + '%');
   }
 
-  // Update length display when slider moves
-  lengthSlider.addEventListener('input', (e) => {
-    lengthVal.textContent = e.target.value;
+  function clampLength(v) {
+    v = Math.round(Number(v));
+    if (!Number.isFinite(v)) return null;
+    return Math.min(LEN_MAX, Math.max(LEN_MIN, v));
+  }
+
+  // The slider is the source of truth; the number input mirrors it and can be
+  // typed into directly. Dragging updates the number; typing moves the slider.
+  lengthSlider.addEventListener('input', () => {
+    lengthVal.value = lengthSlider.value;
     updateSliderFill();
   });
+
+  // While typing, sync the slider if the value is usable (don't rewrite the
+  // field mid-keystroke, so the user can freely edit).
+  lengthVal.addEventListener('input', () => {
+    const v = clampLength(lengthVal.value);
+    if (v !== null) {
+      lengthSlider.value = v;
+      updateSliderFill();
+    }
+  });
+
+  // On commit (blur / Enter), snap the field to the clamped, valid value.
+  lengthVal.addEventListener('change', () => {
+    const v = clampLength(lengthVal.value);
+    const finalVal = v === null ? Number(lengthSlider.value) : v;
+    lengthVal.value = finalVal;
+    lengthSlider.value = finalVal;
+    updateSliderFill();
+  });
+
   updateSliderFill();
 
   // Toggle a character-type chip
@@ -118,9 +146,11 @@ document.addEventListener('DOMContentLoaded', () => {
     { name: 'Weak',   color: 'var(--weak)',   max: 36 },
     { name: 'Fair',   color: 'var(--fair)',   max: 60 },
     { name: 'Good',   color: 'var(--good)',   max: 100 },
-    { name: 'Strong', color: 'var(--strong)', max: 128 },
+    { name: 'Strong', color: 'var(--strong)', max: 100 },
   ];
-  const BAR_CAP = 128;
+  // Reaching the "Strong" threshold (100 bits) fills the bar. The recommended
+  // 16-char all-types default (~105 bits) therefore reads as a full bar.
+  const BAR_CAP = 100;
 
   // Rate strength from entropy (length x log2(pool)), then cap by character-set
   // variety so a single-class password can never read "Strong" however long:

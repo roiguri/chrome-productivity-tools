@@ -214,9 +214,23 @@ body {
   background: #fff;
   border: 1px solid var(--border);
   border-radius: 6px;
-  padding: 1px 8px;
-  min-width: 34px;
+  padding: 3px 8px;
+  width: 52px;
   text-align: center;
+  -moz-appearance: textfield;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.length-val::-webkit-outer-spin-button,
+.length-val::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.length-val:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(43, 108, 246, 0.15);
 }
 
 /* Range slider */
