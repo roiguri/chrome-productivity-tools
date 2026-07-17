@@ -20,7 +20,8 @@
     </div>
 
     <div class="password-display-container">
-      <div id="password-display" class="password-display" title="Click to copy"></div>
+      <div id="password-display" class="password-display" role="button" tabindex="0"
+           aria-label="Generated password, click to copy" title="Click to copy"></div>
       <button id="copy-btn" class="copy-btn" title="Copy to clipboard" aria-label="Copy to clipboard">
         <svg class="icon-copy" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <rect x="9" y="9" width="11" height="11" rx="2"></rect>
@@ -50,7 +51,7 @@
     </button>
 
     <div class="settings-toggle-container">
-      <button id="toggle-settings-btn" class="text-btn" aria-expanded="false">Advanced Settings ▾</button>
+      <button id="toggle-settings-btn" class="text-btn" aria-expanded="false" aria-controls="advanced-settings">Advanced Settings ▾</button>
     </div>
 
     <div id="advanced-settings" class="settings-container hidden">
@@ -59,7 +60,7 @@
         <input type="number" id="length-val" class="length-val" min="4" max="64" value="16"
                inputmode="numeric" aria-label="Password length">
       </div>
-      <input type="range" id="length-slider" min="4" max="64" value="16">
+      <input type="range" id="length-slider" min="4" max="64" value="16" aria-label="Password length">
 
       <div class="chips" role="group" aria-label="Character types">
         <button type="button" class="chip active" id="uppercase-cb" data-set="upper" aria-pressed="true">A-Z</button>

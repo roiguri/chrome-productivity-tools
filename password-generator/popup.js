@@ -151,6 +151,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Strength tiers, keyed by Shannon entropy in bits. `max` is the upper bit
   // bound used both to pick the tier and to clamp the bar; BAR_CAP bits = full.
+  // Good and Strong share max:100 by design: findIndex matches Good first for
+  // bits < 100, and Strong is reached only via the rawTier === -1 fallback when
+  // bits >= 100. Strong's max also doubles as the bar-clamp ceiling (= BAR_CAP).
   const TIERS = [
     { name: 'Weak',   color: 'var(--weak)',   max: 36 },
     { name: 'Fair',   color: 'var(--fair)',   max: 60 },
@@ -251,6 +254,13 @@ document.addEventListener('DOMContentLoaded', () => {
   regenerateBtn.addEventListener('click', handleGenerateAndCopy);
   copyBtn.addEventListener('click', () => copyToClipboard(passwordDisplay.textContent));
   passwordDisplay.addEventListener('click', () => copyToClipboard(passwordDisplay.textContent));
+  // Keyboard access for the click-to-copy display (role="button")
+  passwordDisplay.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      copyToClipboard(passwordDisplay.textContent);
+    }
+  });
 
   // Generate and copy immediately on load
   handleGenerateAndCopy();

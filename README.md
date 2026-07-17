@@ -126,7 +126,8 @@ A fast, click-to-copy password generator extension with secure defaults.
 - **Features:**
   - Instantly generates and copies a password on click.
   - Secure defaults: 16 characters, uppercase, lowercase, numbers, and symbols.
-  - Advanced settings for customizing length and character types on demand.
+  - Live strength meter rating each password from Weak to Strong.
+  - Advanced settings for customizing length (slider or typed, 4–64) and character types on demand.
   - Safe & Stateless: Doesn't remember configurations between sessions.
 
 [📖 Read more →](./password-generator/README.md)
