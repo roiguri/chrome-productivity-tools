@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <defs>
+    <clipPath id="r">
+      <rect x="4" y="4" width="120" height="120" rx="15"/>
+    </clipPath>
+  </defs>
+  <g clip-path="url(#r)">
+    <!-- split fill: anti-diagonal, blue upper-left / green lower-right -->
+    <polygon points="4,4 124,4 4,124" fill="#019EFA"/>
+    <polygon points="124,4 124,124 4,124" fill="#62E5A2"/>
+    <!-- LTR text lines: left-aligned, darker blue -->
+    <g stroke="#0179C8" stroke-width="5" stroke-linecap="round">
+      <line x1="18" y1="23" x2="82" y2="23"/>
+      <line x1="18" y1="39" x2="65" y2="39"/>
+      <line x1="18" y1="55" x2="48" y2="55"/>
+    </g>
+    <!-- RTL text lines: right-aligned, darker green -->
+    <g stroke="#39B87C" stroke-width="5" stroke-linecap="round">
+      <line x1="80" y1="73"  x2="110" y2="73"/>
+      <line x1="62" y1="89"  x2="110" y2="89"/>
+      <line x1="45" y1="105" x2="110" y2="105"/>
+    </g>
+  </g>
+</svg>
