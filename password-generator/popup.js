@@ -31,10 +31,14 @@ document.addEventListener('DOMContentLoaded', () => {
     lengthVal.textContent = e.target.value;
   });
 
-  // Cryptographically secure random number between 0 and max-1
+  // Cryptographically secure random number between 0 and max-1.
+  // Rejection sampling avoids the modulo bias of a plain array[0] % max.
   function getSecureRandomIndex(max) {
+    const limit = Math.floor(0xFFFFFFFF / max) * max;
     const array = new Uint32Array(1);
-    window.crypto.getRandomValues(array);
+    do {
+      window.crypto.getRandomValues(array);
+    } while (array[0] >= limit);
     return array[0] % max;
   }
 
@@ -96,15 +100,7 @@ document.addEventListener('DOMContentLoaded', () => {
     passwordArray = passwordArray.concat(requiredChars);
     passwordArray = secureShuffle(passwordArray);
 
-    let password = passwordArray.join('');
-
-    // If generated password is longer than requested (happens if length < selected sets), truncate
-    // Note: minimum length is 4 in HTML, so this shouldn't happen with 4 sets, but just in case:
-    if (password.length > length) {
-        password = password.slice(0, length);
-    }
-
-    return password;
+    return passwordArray.join('');
   }
 
   // Copy to clipboard function
