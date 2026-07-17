@@ -2,6 +2,8 @@
 
 Finds photos of you on the current webpage and allows you to save them to Google Photos.
 
+> **Note:** Unlike the other extensions in this repo, Find Me is not lightweight — it bundles the `face-api.js` library and its ML models (~19MB total) for local face detection/recognition.
+
 ## Features
 - Scans `<img>` tags on the current page for faces that match your reference face.
 - Runs face detection locally in your browser.

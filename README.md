@@ -1,6 +1,6 @@
 # Chrome Productivity Tools
 
-A collection of lightweight Chrome extensions for enhancing productivity in web applications.
+A collection of Chrome extensions for enhancing productivity in web applications. Most are lightweight; Find Me is a heavier, AI-powered exception that bundles local ML models (~19MB).
 
 
 
@@ -143,6 +143,7 @@ Finds photos of you on the current webpage and allows you to save them to Google
 
 - **Status:** 🚧 In Development
 - **Version:** 1.0.0
+- **Footprint:** ~19MB (bundles local ML models) — not lightweight like the other extensions here
 - **Features:**
   - Local facial recognition in browser
   - Integrates with Google Photos
