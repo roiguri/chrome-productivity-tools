@@ -8,6 +8,14 @@
 
   let iframeDetected = false;
 
+  // Reads the currently selected Docs text, or '' when nothing is selected.
+  //
+  // Google Docs' canvas renderer draws the selection on a <canvas>, so there is
+  // no reliable selection DOM to inspect. Instead we go through the clipboard,
+  // but first stamp it with a unique sentinel: Docs' copy only overwrites the
+  // clipboard when a selection actually exists. If the sentinel is still there
+  // afterwards, nothing was copied -> there was no selection. This is what keeps
+  // a STALE clipboard from being misread as "selected text".
   async function getSelectedText() {
     const iframe = document.querySelector('.docs-texteventtarget-iframe');
     if (!iframe || !iframe.contentDocument) {
@@ -15,17 +23,32 @@
       return '';
     }
 
-    // execCommand must be called synchronously during the user gesture (before any
-    // await), otherwise the browser blocks it. This copies selected text to clipboard.
-    const copyResult = iframe.contentDocument.execCommand('copy');
-    console.log('[Equation Shortcut] execCommand copy result:', copyResult);
+    const sentinel =
+      '__EQ_SHORTCUT_NO_SELECTION__' + Date.now() + '_' + Math.random().toString(36).slice(2);
+
+    // Stamp the clipboard before asking Docs to copy. If we can't write it, we
+    // fall back to plain copy behaviour (staleness detection is simply skipped).
+    let stamped = false;
+    try {
+      await navigator.clipboard.writeText(sentinel);
+      stamped = true;
+    } catch (e) {
+      console.warn('[Equation Shortcut] Failed to stamp clipboard sentinel', e);
+    }
+
+    // Copy the Docs selection (if any) over the sentinel. execCommand still runs
+    // within the shortcut's user gesture, so the browser permits it.
+    iframe.contentDocument.execCommand('copy');
 
     // Wait briefly for the clipboard to update
     await new Promise(resolve => setTimeout(resolve, 100));
 
     try {
       const text = await navigator.clipboard.readText();
-      console.log('[Equation Shortcut] clipboard text:', JSON.stringify(text));
+      // Sentinel survived -> Docs copied nothing -> no selection.
+      if (stamped && text === sentinel) {
+        return '';
+      }
       return text || '';
     } catch (e) {
       console.warn('[Equation Shortcut] Failed to read clipboard', e);
@@ -38,19 +61,18 @@
       event.preventDefault();
       event.stopPropagation();
 
+      // getSelectedText() returns '' when nothing is selected (sentinel intact),
+      // so the empty check below distinguishes the two states.
       const selectedText = await getSelectedText();
-      console.log('[Equation Shortcut] selectedText:', JSON.stringify(selectedText));
-      console.log('[Equation Shortcut] processSelectedTextWithEquations available:', typeof processSelectedTextWithEquations === 'function');
-
-      if (selectedText && selectedText.trim().length > 0) {
-        // Call the new handling function inside equation-trigger.js
-        if (typeof processSelectedTextWithEquations === 'function') {
-          await processSelectedTextWithEquations(selectedText);
-        } else {
-          // Fallback if not loaded
-          await triggerEquationInsertion();
-        }
+      if (
+        selectedText &&
+        selectedText.trim().length > 0 &&
+        typeof processSelectedTextWithEquations === 'function'
+      ) {
+        // State 1: something selected -> replace it with typed text + equations.
+        await processSelectedTextWithEquations(selectedText);
       } else {
+        // State 2: nothing selected (or text unreadable) -> insert empty formula.
         await triggerEquationInsertion();
       }
     }
