@@ -32,10 +32,20 @@ document.addEventListener('DOMContentLoaded', () => {
     toggleSettingsBtn.setAttribute('aria-expanded', String(!isHidden));
   });
 
+  // Paint the slider so the gradient fills only up to the thumb
+  function updateSliderFill() {
+    const min = Number(lengthSlider.min);
+    const max = Number(lengthSlider.max);
+    const pct = ((Number(lengthSlider.value) - min) / (max - min)) * 100;
+    lengthSlider.style.setProperty('--fill', pct + '%');
+  }
+
   // Update length display when slider moves
   lengthSlider.addEventListener('input', (e) => {
     lengthVal.textContent = e.target.value;
+    updateSliderFill();
   });
+  updateSliderFill();
 
   // Toggle a character-type chip
   chips.forEach((chip) => {
@@ -102,28 +112,48 @@ document.addEventListener('DOMContentLoaded', () => {
     return passwordArray.join('');
   }
 
-  // Estimate password strength from length and character-set variety, then
-  // paint the meter. Uses log2(poolSize) * length as an entropy proxy (bits).
+  // Strength tiers, keyed by Shannon entropy in bits. `max` is the upper bit
+  // bound used both to pick the tier and to clamp the bar; BAR_CAP bits = full.
+  const TIERS = [
+    { name: 'Weak',   color: 'var(--weak)',   max: 36 },
+    { name: 'Fair',   color: 'var(--fair)',   max: 60 },
+    { name: 'Good',   color: 'var(--good)',   max: 100 },
+    { name: 'Strong', color: 'var(--strong)', max: 128 },
+  ];
+  const BAR_CAP = 128;
+
+  // Rate strength from entropy (length x log2(pool)), then cap by character-set
+  // variety so a single-class password can never read "Strong" however long:
+  // 1 class -> max Fair, 2 -> max Good, 3+ -> up to Strong.
   function updateStrength(password) {
     const pools = { upper: 26, lower: 26, number: 10, symbol: 32 };
     let poolSize = 0;
-    if (/[A-Z]/.test(password)) poolSize += pools.upper;
-    if (/[a-z]/.test(password)) poolSize += pools.lower;
-    if (/[0-9]/.test(password)) poolSize += pools.number;
-    if (/[^A-Za-z0-9]/.test(password)) poolSize += pools.symbol;
+    let classes = 0;
+    if (/[A-Z]/.test(password)) { poolSize += pools.upper; classes++; }
+    if (/[a-z]/.test(password)) { poolSize += pools.lower; classes++; }
+    if (/[0-9]/.test(password)) { poolSize += pools.number; classes++; }
+    if (/[^A-Za-z0-9]/.test(password)) { poolSize += pools.symbol; classes++; }
 
     const bits = password.length * Math.log2(poolSize || 1);
 
-    let label, color, pct;
-    if (bits < 40) { label = 'Weak'; color = 'var(--weak)'; pct = 25; }
-    else if (bits < 60) { label = 'Fair'; color = 'var(--fair)'; pct = 55; }
-    else if (bits < 80) { label = 'Good'; color = 'var(--good)'; pct = 80; }
-    else { label = 'Strong'; color = 'var(--strong)'; pct = 100; }
+    // Raw tier from entropy alone
+    let rawTier = TIERS.findIndex((t) => bits < t.max);
+    if (rawTier === -1) rawTier = TIERS.length - 1;
+
+    // Variety cap: 1 class -> Fair (1), 2 -> Good (2), 3+ -> Strong (3)
+    const varietyCap = classes <= 1 ? 1 : classes === 2 ? 2 : 3;
+
+    const tierIndex = Math.min(rawTier, varietyCap);
+    const tier = TIERS[tierIndex];
+
+    // Clamp the bar to the (possibly capped) tier ceiling so it stays in sync
+    const shownBits = Math.min(bits, tier.max);
+    const pct = Math.min(100, (shownBits / BAR_CAP) * 100);
 
     strengthBar.style.width = pct + '%';
-    strengthBar.style.background = color;
-    strengthLabel.textContent = label;
-    strengthLabel.style.color = color;
+    strengthBar.style.background = tier.color;
+    strengthLabel.textContent = tier.name;
+    strengthLabel.style.color = tier.color;
   }
 
   // Copy to clipboard and confirm on the copy button
