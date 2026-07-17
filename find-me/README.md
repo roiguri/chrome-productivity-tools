@@ -20,6 +20,7 @@ Finds photos of you on the current webpage and allows you to save them to Google
 This extension interacts with your Google Photos data and process images on the websites you visit.
 - **Local AI Processing**: Face detection and recognition are performed **entirely locally** within your browser using WebGPU/WebGL (via face-api.js).
 - **No Third-Party Servers**: Images from the websites you visit are never sent to any external server for analysis.
+- **Broad Host Permission**: The extension requests access to all sites (`<all_urls>`) so it can fetch image bytes directly and detect faces regardless of a site's CORS policy. This access is only exercised when you click "Scan This Page" — no background/passive access to sites you visit.
 - **Google Photos Access**: The extension requires access to your Google Photos account to read your reference album and to upload photos you select. The OAuth token is stored locally in your browser and used only to communicate directly with the Google Photos API (`https://photoslibrary.googleapis.com`).
 
 ## How to use

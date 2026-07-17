@@ -3,6 +3,27 @@ let modelsLoaded = false;
 let referenceDescriptor = null;
 let container = null;
 
+// Fetch image bytes directly (bypasses the target site's CORS policy via the
+// extension's <all_urls> host permission) and load them as a blob: URL, which
+// canvas/face-api treat as same-origin regardless of the original host.
+async function loadImage(url) {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Failed to fetch image (${response.status})`);
+  const blob = await response.blob();
+  const blobUrl = URL.createObjectURL(blob);
+  try {
+    const img = new Image();
+    img.src = blobUrl;
+    await new Promise((resolve, reject) => {
+      img.onload = resolve;
+      img.onerror = () => reject(new Error('Failed to decode image'));
+    });
+    return img;
+  } finally {
+    URL.revokeObjectURL(blobUrl);
+  }
+}
+
 // Ensure face-api models are loaded
 async function loadModels() {
   if (modelsLoaded) return;
@@ -35,13 +56,7 @@ async function computeReferenceDescriptor(albumMediaItems) {
     if (!item.baseUrl) continue;
 
     try {
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-      img.src = item.baseUrl + '=w500-h500'; // Append sizing for Google Photos API
-      await new Promise((resolve, reject) => {
-        img.onload = resolve;
-        img.onerror = reject;
-      });
+      const img = await loadImage(item.baseUrl + '=w500-h500'); // Append sizing for Google Photos API
 
       const detection = await faceapi.detectSingleFace(img)
         .withFaceLandmarks()
@@ -134,26 +149,16 @@ function updateStatus(text) {
   if (statusEl) statusEl.textContent = text;
 }
 
-// Convert an image element to a data URL handling cross-origin limits
+// Convert an image element to a data URL, fetching bytes directly so the
+// canvas is never tainted regardless of the source's CORS policy.
 async function getImageDataUrl(imgEl) {
-  return new Promise((resolve, reject) => {
-    const clone = new Image();
-    clone.crossOrigin = 'anonymous';
-    clone.onload = () => {
-      try {
-        const canvas = document.createElement('canvas');
-        canvas.width = clone.naturalWidth || imgEl.naturalWidth;
-        canvas.height = clone.naturalHeight || imgEl.naturalHeight;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(clone, 0, 0);
-        resolve(canvas.toDataURL('image/jpeg'));
-      } catch (e) {
-        reject(e);
-      }
-    };
-    clone.onerror = () => reject(new Error('Failed to load image for cross-origin extraction'));
-    clone.src = imgEl.src;
-  });
+  const img = await loadImage(imgEl.src);
+  const canvas = document.createElement('canvas');
+  canvas.width = img.naturalWidth || imgEl.naturalWidth;
+  canvas.height = img.naturalHeight || imgEl.naturalHeight;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(img, 0, 0);
+  return canvas.toDataURL('image/jpeg');
 }
 
 // Upload the image to Google Photos
@@ -275,15 +280,7 @@ async function runScan(albumId) {
       updateStatus(`Scanning image ${i + 1} of ${images.length}...`);
 
       try {
-        // Must clone image to allow cross-origin if possible, or faceapi might fail
-        const imgClone = new Image();
-        imgClone.crossOrigin = 'anonymous';
-        imgClone.src = img.src;
-
-        await new Promise((resolve, reject) => {
-          imgClone.onload = resolve;
-          imgClone.onerror = reject;
-        });
+        const imgClone = await loadImage(img.src);
 
         const detections = await faceapi.detectAllFaces(imgClone)
           .withFaceLandmarks()
