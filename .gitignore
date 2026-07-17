@@ -24,3 +24,6 @@ node_modules/
 # Temporary files
 .tmp/
 temp/
+
+# Local secrets/config (never commit real OAuth client IDs, keys, etc.)
+.env
