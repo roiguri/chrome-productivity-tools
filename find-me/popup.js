@@ -89,9 +89,13 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // Trigger scan on the active tab
+  const autoScrollCheckbox = document.getElementById('auto-scroll');
+
   scanBtn.addEventListener('click', async () => {
     const { referenceImages } = await chrome.storage.local.get(['referenceImages']);
     if (!referenceImages || referenceImages.length === 0) return;
+
+    const autoScroll = autoScrollCheckbox.checked;
 
     scanBtn.disabled = true;
     scanStatus.textContent = "Initializing scanner...";
@@ -103,11 +107,10 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
+    const scanMessage = { action: 'startScan', referenceImages, autoScroll };
+
     // Tell background or content script to start scanning
-    chrome.tabs.sendMessage(tab.id, {
-      action: 'startScan',
-      referenceImages
-    }, (response) => {
+    chrome.tabs.sendMessage(tab.id, scanMessage, (response) => {
       if (chrome.runtime.lastError) {
         // Content script probably not injected yet
         chrome.scripting.executeScript({
@@ -115,10 +118,7 @@ document.addEventListener('DOMContentLoaded', () => {
           files: ['face-api.min.js', 'content.js']
         }).then(() => {
           // Try sending the message again
-          chrome.tabs.sendMessage(tab.id, {
-            action: 'startScan',
-            referenceImages
-          });
+          chrome.tabs.sendMessage(tab.id, scanMessage);
           scanStatus.textContent = "Scan started! See page for details.";
         }).catch(err => {
           scanStatus.textContent = "Error: Cannot run on this page.";

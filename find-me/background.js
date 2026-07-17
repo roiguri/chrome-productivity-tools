@@ -41,6 +41,26 @@ async function photosApiRequest(endpoint, options = {}) {
   return response.text();
 }
 
+// Fetch a cross-origin image and return it as a data URL. This runs in the
+// service worker, which -- unlike a content script -- can fetch across origins
+// under the extension's <all_urls> host permission, bypassing the page's CORS
+// policy. FileReader isn't available in service workers, so base64-encode the
+// bytes manually.
+async function fetchImageAsDataUrl(url) {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Failed to fetch image (${response.status})`);
+  const blob = await response.blob();
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+
+  let binary = '';
+  const chunkSize = 0x8000; // avoid arg-count limits on String.fromCharCode
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+  }
+  const type = blob.type || 'image/jpeg';
+  return `data:${type};base64,${btoa(binary)}`;
+}
+
 // Upload a single image (from base64 or blob URL data) to Google Photos
 async function uploadImage(dataUrl, fileName) {
   // First, upload the raw bytes to get an upload token
@@ -96,6 +116,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     getAuthToken(false)
       .then(token => sendResponse({ success: true, token }))
       .catch(() => sendResponse({ success: false }));
+    return true;
+  }
+
+  if (request.action === "fetchImage") {
+    fetchImageAsDataUrl(request.url)
+      .then(dataUrl => sendResponse({ success: true, dataUrl }))
+      .catch(error => {
+        console.error('[Find Me] fetchImage failed:', request.url, error);
+        sendResponse({ success: false, error: error.message });
+      });
     return true;
   }
 

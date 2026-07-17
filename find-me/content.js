@@ -3,30 +3,88 @@ let modelsLoaded = false;
 let referenceDescriptor = null;
 let container = null;
 
-// Fetch image bytes directly (bypasses the target site's CORS policy via the
-// extension's <all_urls> host permission) and load them as a blob: URL, which
-// canvas/face-api treat as same-origin regardless of the original host.
-async function loadImage(url) {
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`Failed to fetch image (${response.status})`);
-  const blob = await response.blob();
-  const blobUrl = URL.createObjectURL(blob);
+const SCAN_MAX_DIM = 640;   // px: downscale page images before detection for speed
+const THUMB_MAX_DIM = 200;  // px: small thumbnails for the results drawer
+let backendFellBack = false;
+
+// Draw an image onto a canvas, downscaled so its longest side is <= maxDim.
+// Feeding face-api a smaller image massively cuts per-image work (a gallery of
+// multi-thousand-pixel photos is the slow case), and the downscaled canvas
+// doubles as a cheap thumbnail.
+function downscaleToCanvas(img, maxDim) {
+  const w = img.naturalWidth || img.width;
+  const h = img.naturalHeight || img.height;
+  const scale = Math.min(1, maxDim / Math.max(w, h));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(w * scale));
+  canvas.height = Math.max(1, Math.round(h * scale));
+  canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+  return canvas;
+}
+
+// Run a face-api detection on the fast WebGL backend, falling back to CPU once
+// if WebGL errors (some GPUs have a broken float path). The fallback is sticky
+// so we don't thrash backends mid-scan.
+async function withBackendFallback(run) {
   try {
-    const img = new Image();
-    img.src = blobUrl;
-    await new Promise((resolve, reject) => {
-      img.onload = resolve;
-      img.onerror = () => reject(new Error('Failed to decode image'));
-    });
-    return img;
-  } finally {
-    URL.revokeObjectURL(blobUrl);
+    return await run();
+  } catch (e) {
+    if (!backendFellBack && faceapi.tf.getBackend() === 'webgl') {
+      console.warn('[Find Me] WebGL detection failed; switching to CPU backend.', e);
+      backendFellBack = true;
+      await faceapi.tf.setBackend('cpu');
+      await faceapi.tf.ready();
+      return await run();
+    }
+    throw e;
   }
+}
+
+// Ask the background service worker to fetch a URL's bytes and return them as a
+// data URL. In MV3 a content-script fetch is bound to the page origin and stays
+// subject to CORS; only the service worker can fetch cross-origin under the
+// extension's <all_urls> host permission.
+function fetchImageViaBackground(url) {
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage({ action: 'fetchImage', url }, (response) => {
+      if (chrome.runtime.lastError) {
+        return reject(new Error(chrome.runtime.lastError.message));
+      }
+      if (response && response.success) {
+        resolve(response.dataUrl);
+      } else {
+        reject(new Error(response ? response.error : 'Failed to fetch image'));
+      }
+    });
+  });
+}
+
+// Load an <img> from a URL. data: URLs (our locally-picked reference photos)
+// load directly. Cross-origin page images are fetched via the background worker
+// and returned as a data URL, which canvas/face-api treat as same-origin
+// regardless of the original host (and which is never CORS-tainted).
+async function loadImage(url) {
+  const decode = (src) => new Promise((resolve, reject) => {
+    const img = new Image();
+    img.src = src;
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('Failed to decode image'));
+  });
+
+  const src = url.startsWith('data:') ? url : await fetchImageViaBackground(url);
+  return decode(src);
 }
 
 // Ensure face-api models are loaded
 async function loadModels() {
   if (modelsLoaded) return;
+
+  // Prefer the WebGL backend for speed; withBackendFallback() drops to CPU if a
+  // detection ever fails on WebGL (a broken-float-path GPU).
+  await faceapi.tf.setBackend('webgl');
+  await faceapi.tf.ready();
+  console.log('[Find Me] TF backend:', faceapi.tf.getBackend());
+
   const modelUrl = chrome.runtime.getURL('models');
   await faceapi.nets.ssdMobilenetv1.loadFromUri(modelUrl);
   await faceapi.nets.faceLandmark68Net.loadFromUri(modelUrl);
@@ -39,24 +97,28 @@ async function loadModels() {
 async function computeReferenceDescriptor(referenceImages) {
   const descriptors = [];
 
-  for (const dataUrl of referenceImages) {
+  for (let i = 0; i < referenceImages.length; i++) {
+    updateStatus(`Reading reference photo ${i + 1} of ${referenceImages.length}...`);
     try {
-      const img = await loadImage(dataUrl);
-
-      const detection = await faceapi.detectSingleFace(img)
-        .withFaceLandmarks()
-        .withFaceDescriptor();
+      const img = await loadImage(referenceImages[i]);
+      const detection = await withBackendFallback(() =>
+        faceapi.detectSingleFace(img).withFaceLandmarks().withFaceDescriptor()
+      );
 
       if (detection) {
         descriptors.push(detection.descriptor);
+      } else {
+        console.warn(`[Find Me] No face detected in reference photo ${i + 1}`);
       }
     } catch (e) {
-      console.warn("Failed to process reference image", e);
+      console.warn(`[Find Me] Failed to process reference photo ${i + 1}`, e);
     }
   }
 
+  updateStatus(`Found a face in ${descriptors.length} of ${referenceImages.length} reference photo(s).`);
+
   if (descriptors.length === 0) {
-    throw new Error("No faces found in reference photos");
+    throw new Error("No faces found in your reference photos. Try clearer, front-facing photos.");
   }
 
   // Calculate the average descriptor
@@ -168,8 +230,10 @@ async function uploadToGooglePhotos(imgEl) {
   });
 }
 
-// Render a found image in the UI with actions
-function addMatchToUI(imgEl) {
+// Render a found image in the UI with actions. thumbSrc is a small downscaled
+// data URL so the drawer stays light even with many matches; imgEl is kept for
+// the full-resolution upload.
+function addMatchToUI(imgEl, thumbSrc) {
   const content = document.getElementById('find-me-content');
   if (!content) return;
 
@@ -184,7 +248,8 @@ function addMatchToUI(imgEl) {
   `;
 
   const thumb = document.createElement('img');
-  thumb.src = imgEl.src;
+  thumb.src = thumbSrc || imgEl.src;
+  thumb.loading = 'lazy';
   thumb.style.cssText = `
     width: 100%;
     height: auto;
@@ -227,20 +292,44 @@ function addMatchToUI(imgEl) {
   actions.appendChild(uploadBtn);
   item.appendChild(thumb);
   item.appendChild(actions);
-
-  // Remove status if it's the first image
-  const status = document.getElementById('find-me-status');
-  if (status && status.textContent.includes('Scanning')) {
-    status.style.display = 'none';
-  }
-
   content.appendChild(item);
 }
 
-// Main scan logic
-async function runScan(referenceImages) {
+// Scan a single already-loaded <img> for a match, appending to the drawer if
+// the reference face is found. Returns true if it was a match.
+async function scanImage(img) {
+  const fullImg = await loadImage(img.currentSrc || img.src);
+  // Detect on a downscaled copy -- far less work than full-res photos, and
+  // face-api resizes to its own input size internally anyway.
+  const scanCanvas = downscaleToCanvas(fullImg, SCAN_MAX_DIM);
+
+  const detections = await withBackendFallback(() =>
+    faceapi.detectAllFaces(scanCanvas).withFaceLandmarks().withFaceDescriptors()
+  );
+
+  for (const detection of detections) {
+    const distance = faceapi.euclideanDistance(referenceDescriptor, detection.descriptor);
+    // Distance < 0.6 is generally considered a match for this model
+    if (distance < 0.6) {
+      const thumbSrc = downscaleToCanvas(fullImg, THUMB_MAX_DIM).toDataURL('image/jpeg', 0.8);
+      addMatchToUI(img, thumbSrc);
+      return true;
+    }
+  }
+  return false;
+}
+
+// Main scan logic. When autoScroll is set, the page is scrolled progressively
+// and newly loaded images are scanned as they appear (streaming), rather than
+// waiting for the whole gallery to load first.
+async function runScan(referenceImages, autoScroll) {
   setupUI();
   updateStatus("Loading AI Models...");
+
+  const AUTO_SCROLL_STEP = 0.8;      // fraction of viewport height per scroll
+  const LAZY_LOAD_WAIT_MS = 600;     // give lazy images time to load after scroll
+  const IDLE_PASSES_TO_STOP = 3;     // stop after N bottom passes yield nothing new
+  const MAX_SCROLL_PASSES = 1000;    // hard safety cap against runaway pages
 
   try {
     await loadModels();
@@ -250,46 +339,65 @@ async function runScan(referenceImages) {
       referenceDescriptor = await computeReferenceDescriptor(referenceImages);
     }
 
-    updateStatus("Scanning images on page...");
-
-    // Find all standard img tags (can be expanded later)
-    const images = Array.from(document.querySelectorAll('img')).filter(img =>
-      img.naturalWidth > 50 && img.naturalHeight > 50 && img.src
-    );
-
+    const seen = new Set();
+    let scannedCount = 0;
     let matchCount = 0;
 
-    for (let i = 0; i < images.length; i++) {
-      const img = images[i];
-      updateStatus(`Scanning image ${i + 1} of ${images.length}...`);
+    // Scan every currently-loaded image we haven't seen yet. Returns how many
+    // new images were processed this pass.
+    const scanNewImages = async () => {
+      const fresh = Array.from(document.querySelectorAll('img')).filter(img => {
+        const key = img.currentSrc || img.src;
+        return key && !seen.has(key) && img.naturalWidth > 50 && img.naturalHeight > 50;
+      });
 
-      try {
-        const imgClone = await loadImage(img.src);
-
-        const detections = await faceapi.detectAllFaces(imgClone)
-          .withFaceLandmarks()
-          .withFaceDescriptors();
-
-        for (const detection of detections) {
-          // Euclidean distance between reference and found descriptor
-          const distance = faceapi.euclideanDistance(referenceDescriptor, detection.descriptor);
-
-          // Distance < 0.6 is generally considered a match for this model
-          if (distance < 0.6) {
-            addMatchToUI(img);
-            matchCount++;
-            break; // Move to next image once we find you
-          }
+      for (const img of fresh) {
+        seen.add(img.currentSrc || img.src);
+        scannedCount++;
+        updateStatus(`Scanning… ${scannedCount} images, ${matchCount} match(es)`);
+        try {
+          if (await scanImage(img)) matchCount++;
+        } catch (e) {
+          console.warn("Could not process image", img.currentSrc || img.src, e);
         }
-      } catch (e) {
-        console.warn("Could not process image", img.src, e);
+        // Yield so the browser can paint/scroll during a long scan.
+        await new Promise(resolve => setTimeout(resolve));
+      }
+      return fresh.length;
+    };
+
+    if (!autoScroll) {
+      updateStatus("Scanning images on page...");
+      await scanNewImages();
+    } else {
+      let idlePasses = 0;
+      let passes = 0;
+      while (passes < MAX_SCROLL_PASSES) {
+        passes++;
+        const found = await scanNewImages();
+
+        const atBottom =
+          window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 2;
+
+        if (found === 0 && atBottom) {
+          if (++idlePasses >= IDLE_PASSES_TO_STOP) break;
+        } else {
+          idlePasses = 0;
+        }
+
+        // Scroll down to trigger more lazy loading, then wait for it.
+        window.scrollBy(0, Math.round(window.innerHeight * AUTO_SCROLL_STEP));
+        await new Promise(resolve => setTimeout(resolve, LAZY_LOAD_WAIT_MS));
+      }
+      if (passes >= MAX_SCROLL_PASSES) {
+        console.warn('[Find Me] Reached max scroll passes; stopping scan early.');
       }
     }
 
     const status = document.getElementById('find-me-status');
     if (status) {
       status.style.display = 'block';
-      status.textContent = `Scan complete. Found ${matchCount} matches.`;
+      status.textContent = `Scan complete. Scanned ${scannedCount} images, found ${matchCount} match(es).`;
     }
 
   } catch (error) {
@@ -301,7 +409,7 @@ async function runScan(referenceImages) {
 // Listen for trigger from popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'startScan') {
-    runScan(request.referenceImages);
+    runScan(request.referenceImages, request.autoScroll);
     sendResponse({ started: true });
   }
 });
