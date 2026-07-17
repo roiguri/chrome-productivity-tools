@@ -57,9 +57,9 @@ A lightweight Chrome extension that adds the **Alt+=** keyboard shortcut to inse
 
 **When text is selected (conversion mode):**
 
-1. Reads selected text from clipboard (`execCommand('copy')` + `navigator.clipboard.readText()`)
+1. Reads the selection via the clipboard: stamps it with a unique sentinel, runs `execCommand('copy')` during the user gesture, then `navigator.clipboard.readText()`. If the sentinel is unchanged, nothing was copied — so there was no selection (a stale clipboard can't be mistaken for one) and a new empty equation is inserted instead
 2. Parses the text into plain text and equation tokens (`$...$` inline, `$$...$$` block)
-3. Deletes the selection, then replays the content — plain text is typed character by character, each equation token is inserted via the equation editor with full sub/superscript awareness
+3. Deletes the selection, then replays the content — plain text is typed character by character, each equation token is inserted via the equation editor with full sub/superscript awareness. Big "limits" operators (`\sum`, `\int`, `\prod`, …) are filled through Docs' limits template (below slot → above slot); other `\commands` are converted by typing the name followed by a Space
 
 ## Development
 
@@ -82,15 +82,15 @@ equation-shortcut/
 - **Content Script Injection**: Runs on all frames with `all_frames: true` to access Google Docs' iframe
 - **Event Handling**: Uses MutationObserver to detect Google Docs' text event iframe
 - **Keyboard Capture**: Listens for `keydown` events with capture phase (`useCapture: true`)
-- **Selected Text Reading**: Uses `execCommand('copy')` synchronously during the user gesture, then `navigator.clipboard.readText()`
-- **Equation Typing**: Dispatches `keydown`, `keypress`, `beforeinput`, `input`, and `keyup` events character by character; sub/superscripts (`_`, `^`) are followed by `ArrowRight` to exit the sub/superscript mode
+- **Selected Text Reading**: Stamps the clipboard with a unique sentinel, runs `execCommand('copy')` synchronously during the user gesture, then reads via `navigator.clipboard.readText()`; an unchanged sentinel means nothing was selected (canvas-rendered Docs has no reliable selection DOM to inspect)
+- **Equation Typing**: Dispatches `keydown`, `keypress`, `beforeinput`, `input`, and `keyup` events character by character; sub/superscripts (`_`, `^`) are followed by `ArrowRight` to exit the sub/superscript mode. Big "limits" operators (`\sum`, `\int`, …) are instead driven through Docs' limits template (fill below slot → `ArrowRight` → fill above slot → `ArrowRight`)
 
 ### Debugging
 
 1. Open a Google Docs document and Chrome DevTools (F12)
-2. Check Console for log messages:
-   - `[Equation Shortcut] Alt+= detected` — shortcut was captured
-   - `[Equation Shortcut] selectedText: "..."` — shows what text was read from clipboard
+2. The extension logs only warnings (`console.warn`) when something fails:
+   - `[Equation Shortcut] getSelectedText: no iframe found` — Docs' text-event iframe wasn't located
+   - `[Equation Shortcut] Failed to stamp clipboard sentinel` / `Failed to read clipboard` — clipboard access was blocked
    - `[Equation Shortcut] Failed to show toolbar` — help search didn't work
    - `[Equation Shortcut] Failed to insert equation` — button not found after showing toolbar
 
@@ -147,13 +147,13 @@ MIT License - feel free to use, modify, and distribute.
 1. **Grant Clipboard Permission**: On first use, Chrome may prompt for clipboard access — allow it
 2. **Check Selection**: Make sure text is selected before pressing Alt+=
 3. **Check Syntax**: Inline equations use single `$...$`, block equations use `$$...$$`
-4. **Console Check**: Look for `[Equation Shortcut] clipboard text:` to see what was read
+4. **Console Check**: Look for `[Equation Shortcut]` warnings indicating the clipboard read failed
 
 ### Keyboard Shortcut Not Responding
 
 1. **Verify Focus**: Click in the document to ensure Google Docs has focus
 2. **Check for Conflicts**: Ensure no other extension is capturing Alt+=
-3. **Check DevTools Console**: Look for `[Equation Shortcut] Alt+= detected` message
+3. **Check DevTools Console**: Look for any `[Equation Shortcut]` warnings
 4. **Try Different Document**: Some Google Docs features may behave differently in older documents
 
 ### Icons Not Showing
