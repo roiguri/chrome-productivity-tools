@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Password Generator</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h2>Password Generator</h2>
+    </div>
+
+    <div class="password-display-container">
+      <div id="password-display" class="password-display" title="Click to copy"></div>
+      <div id="copy-feedback" class="copy-feedback hidden">Copied!</div>
+    </div>
+
+    <button id="regenerate-btn" class="primary-btn">Regenerate</button>
+
+    <div class="settings-toggle-container">
+      <button id="toggle-settings-btn" class="text-btn">Advanced Settings ▼</button>
+    </div>
+
+    <div id="advanced-settings" class="settings-container hidden">
+      <div class="setting-row">
+        <label for="length-slider">Length: <span id="length-val">16</span></label>
+        <input type="range" id="length-slider" min="4" max="64" value="16">
+      </div>
+
+      <div class="setting-row">
+        <label class="checkbox-label">
+          <input type="checkbox" id="uppercase-cb" checked>
+          Uppercase (A-Z)
+        </label>
+      </div>
+
+      <div class="setting-row">
+        <label class="checkbox-label">
+          <input type="checkbox" id="lowercase-cb" checked>
+          Lowercase (a-z)
+        </label>
+      </div>
+
+      <div class="setting-row">
+        <label class="checkbox-label">
+          <input type="checkbox" id="numbers-cb" checked>
+          Numbers (0-9)
+        </label>
+      </div>
+
+      <div class="setting-row">
+        <label class="checkbox-label">
+          <input type="checkbox" id="symbols-cb" checked>
+          Symbols (!@#$...)
+        </label>
+      </div>
+    </div>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>

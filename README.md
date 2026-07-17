@@ -14,6 +14,7 @@ A collection of lightweight Chrome extensions for enhancing productivity in web 
     <td align="center"><a href="./gibberish-fixer/"><img src="./gibberish-fixer/icons/icon128.png" width="65" height="65" alt="Gibberish Fixer" /></a></td>
     <td align="center"><a href="./direction-switcher/"><img src="./direction-switcher/icons/icon128.png" width="82" height="82" alt="Direction Switcher" /></a></td>
     <td align="center"><a href="./peer-share/"><img src="./peer-share/icons/icon128.png" width="65" height="65" alt="Peer Share" /></a></td>
+    <td align="center"><a href="./password-generator/"><img src="./password-generator/icons/icon128.png" width="65" height="65" alt="Password Generator" /></a></td>
   </tr>
   <tr>
     <td align="center"><a href="./equation-shortcut/">Equation Shortcut</a></td>
@@ -21,6 +22,7 @@ A collection of lightweight Chrome extensions for enhancing productivity in web 
     <td align="center"><a href="./gibberish-fixer/">Gibberish Fixer</a></td>
     <td align="center"><a href="./direction-switcher/">Direction Switcher</a></td>
     <td align="center"><a href="./peer-share/">Peer Share</a></td>
+    <td align="center"><a href="./password-generator/">Password Generator</a></td>
   </tr>
 </table>
 </div>
@@ -114,6 +116,23 @@ Send a screenshot of the current tab, a file, or pasted text straight to a paire
 
 ---
 
+### Password Generator
+📁 [`password-generator/`](./password-generator/)
+
+A fast, click-to-copy password generator extension with secure defaults.
+
+- **Status:** ✅ Production Ready
+- **Version:** 1.0.0
+- **Features:**
+  - Instantly generates and copies a password on click.
+  - Secure defaults: 16 characters, uppercase, lowercase, numbers, and symbols.
+  - Advanced settings for customizing length and character types on demand.
+  - Safe & Stateless: Doesn't remember configurations between sessions.
+
+[📖 Read more →](./password-generator/README.md)
+
+---
+
 ## Installation
 
 Each extension is self-contained in its own directory. To install:
@@ -137,6 +156,7 @@ chrome-productivity-tools/
 ├── gibberish-fixer/       # Hebrew-English Text Swapper extension
 ├── direction-switcher/    # Text Direction (RTL/LTR) toggler
 ├── peer-share/            # Screenshot/file/text peer sharing extension
+├── password-generator/    # Instant password generator
 └── README.md             # This file
 ```
 
