@@ -4,7 +4,10 @@
   "version": "1.0.0",
   "description": "Add Alt+= keyboard shortcut to insert equations in Google Docs (matches Microsoft Word behavior)",
 
-  "permissions": [],
+  "permissions": [
+    "clipboardRead",
+    "clipboardWrite"
+  ],
 
   "host_permissions": [
     "https://docs.google.com/*"
@@ -12,7 +15,7 @@
 
   "content_scripts": [{
     "matches": ["https://docs.google.com/document/*"],
-    "js": ["equation-trigger.js", "content-script.js"],
+    "js": ["latex-mathquill-map.js", "equation-trigger.js", "content-script.js"],
     "run_at": "document_end",
     "all_frames": true,
     "match_about_blank": true
