@@ -41,44 +41,6 @@ async function photosApiRequest(endpoint, options = {}) {
   return response.text();
 }
 
-// Fetch all user albums
-async function fetchAlbums() {
-  let albums = [];
-  let nextPageToken = null;
-
-  do {
-    const url = nextPageToken ? `albums?pageToken=${nextPageToken}` : 'albums';
-    const data = await photosApiRequest(url);
-    if (data.albums) albums = albums.concat(data.albums);
-    nextPageToken = data.nextPageToken;
-  } while (nextPageToken);
-
-  return albums;
-}
-
-// Fetch media items from a specific album
-async function fetchAlbumMedia(albumId) {
-  let mediaItems = [];
-  let nextPageToken = null;
-
-  do {
-    const data = await photosApiRequest('mediaItems:search', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        albumId: albumId,
-        pageSize: 100,
-        pageToken: nextPageToken
-      })
-    });
-
-    if (data.mediaItems) mediaItems = mediaItems.concat(data.mediaItems);
-    nextPageToken = data.nextPageToken;
-  } while (nextPageToken);
-
-  return mediaItems;
-}
-
 // Upload a single image (from base64 or blob URL data) to Google Photos
 async function uploadImage(dataUrl, fileName) {
   // First, upload the raw bytes to get an upload token
@@ -134,26 +96,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     getAuthToken(false)
       .then(token => sendResponse({ success: true, token }))
       .catch(() => sendResponse({ success: false }));
-    return true;
-  }
-
-  if (request.action === "getAlbums") {
-    fetchAlbums()
-      .then(albums => sendResponse({ success: true, albums }))
-      .catch(error => {
-        console.error('[Find Me] getAlbums failed:', error);
-        sendResponse({ success: false, error: error.message });
-      });
-    return true;
-  }
-
-  if (request.action === "getAlbumMedia") {
-    fetchAlbumMedia(request.albumId)
-      .then(mediaItems => sendResponse({ success: true, mediaItems }))
-      .catch(error => {
-        console.error('[Find Me] getAlbumMedia failed:', error);
-        sendResponse({ success: false, error: error.message });
-      });
     return true;
   }
 
