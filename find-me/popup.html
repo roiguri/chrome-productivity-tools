@@ -37,12 +37,11 @@
       background-color: #ccc;
       cursor: not-allowed;
     }
-    select {
+    input[type="file"] {
       width: 100%;
-      padding: 8px;
-      margin-bottom: 12px;
-      border-radius: 4px;
-      border: 1px solid #ccc;
+      padding: 6px 0;
+      margin-bottom: 4px;
+      font-size: 12px;
     }
     .section {
       margin-bottom: 16px;
@@ -67,25 +66,25 @@
 <body>
   <h1><img src="icons/icon48.png" width="24" height="24"> Find Me</h1>
 
-  <div id="auth-section" class="section">
-    <p>Connect Google Photos to select a reference album and enable saving.</p>
-    <button id="auth-btn">Sign in with Google</button>
-    <div id="auth-error" class="error hidden"></div>
+  <div class="section">
+    <label for="reference-photos"><strong>1. Add Reference Photos of Your Face</strong></label>
+    <p style="font-size: 12px; color: #666; margin-top: 4px;">Choose up to 5 clear photos of your face. They're stored locally in your browser and never uploaded anywhere.</p>
+    <input type="file" id="reference-photos" accept="image/*" multiple>
+    <div id="reference-status" class="status"></div>
   </div>
 
-  <div id="main-section" class="section hidden">
-    <label for="album-select"><strong>1. Select Reference Face Album</strong></label>
-    <p style="font-size: 12px; color: #666; margin-top: 4px;">Choose an album containing clear photos of your face. We will use these to find you.</p>
-    <select id="album-select">
-      <option value="">Loading albums...</option>
-    </select>
-    <div id="album-status" class="status"></div>
+  <div class="section">
+    <label><strong>2. Scan Current Page</strong></label>
+    <button id="scan-btn" disabled>Scan This Page</button>
+    <div id="scan-status" class="status"></div>
+  </div>
 
-    <div style="margin-top: 16px;">
-      <label><strong>2. Scan Current Page</strong></label>
-      <button id="scan-btn" disabled>Scan This Page</button>
-      <div id="scan-status" class="status"></div>
-    </div>
+  <div class="section" style="border-bottom: none; margin-bottom: 0; padding-bottom: 0;">
+    <label><strong>Google Photos (optional)</strong></label>
+    <p style="font-size: 12px; color: #666; margin-top: 4px;">Sign in to enable "Save to Photos" on matches found during a scan.</p>
+    <button id="auth-btn">Sign in with Google</button>
+    <div id="auth-status" class="status"></div>
+    <div id="auth-error" class="error hidden"></div>
   </div>
 
   <script src="popup.js"></script>

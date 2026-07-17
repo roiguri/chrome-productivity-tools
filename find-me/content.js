@@ -34,29 +34,14 @@ async function loadModels() {
   modelsLoaded = true;
 }
 
-// Fetch reference images from the selected Google Photos album
-async function getReferenceImages(albumId) {
-  return new Promise((resolve, reject) => {
-    chrome.runtime.sendMessage({ action: 'getAlbumMedia', albumId }, (response) => {
-      if (response && response.success) {
-        resolve(response.mediaItems || []);
-      } else {
-        reject(new Error(response ? response.error : 'Unknown error fetching album media'));
-      }
-    });
-  });
-}
-
-// Compute a single reference descriptor by taking the mean of all found face descriptors in the album
-async function computeReferenceDescriptor(albumMediaItems) {
+// Compute a single reference descriptor by taking the mean of all found face descriptors
+// across the reference photos the user picked locally (data URLs from popup.js).
+async function computeReferenceDescriptor(referenceImages) {
   const descriptors = [];
 
-  for (let i = 0; i < Math.min(albumMediaItems.length, 5); i++) { // Limit to 5 for speed
-    const item = albumMediaItems[i];
-    if (!item.baseUrl) continue;
-
+  for (const dataUrl of referenceImages) {
     try {
-      const img = await loadImage(item.baseUrl + '=w500-h500'); // Append sizing for Google Photos API
+      const img = await loadImage(dataUrl);
 
       const detection = await faceapi.detectSingleFace(img)
         .withFaceLandmarks()
@@ -71,7 +56,7 @@ async function computeReferenceDescriptor(albumMediaItems) {
   }
 
   if (descriptors.length === 0) {
-    throw new Error("No faces found in reference album");
+    throw new Error("No faces found in reference photos");
   }
 
   // Calculate the average descriptor
@@ -253,7 +238,7 @@ function addMatchToUI(imgEl) {
 }
 
 // Main scan logic
-async function runScan(albumId) {
+async function runScan(referenceImages) {
   setupUI();
   updateStatus("Loading AI Models...");
 
@@ -261,9 +246,8 @@ async function runScan(albumId) {
     await loadModels();
 
     if (!referenceDescriptor) {
-      updateStatus("Fetching reference face...");
-      const mediaItems = await getReferenceImages(albumId);
-      referenceDescriptor = await computeReferenceDescriptor(mediaItems);
+      updateStatus("Processing reference photos...");
+      referenceDescriptor = await computeReferenceDescriptor(referenceImages);
     }
 
     updateStatus("Scanning images on page...");
@@ -317,7 +301,7 @@ async function runScan(albumId) {
 // Listen for trigger from popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'startScan') {
-    runScan(request.albumId);
+    runScan(request.referenceImages);
     sendResponse({ started: true });
   }
 });

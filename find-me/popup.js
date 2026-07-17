@@ -1,30 +1,30 @@
 // popup.js
+const MAX_REFERENCE_PHOTOS = 5;
+const REFERENCE_PHOTO_MAX_DIM = 400;
+const REFERENCE_PHOTO_QUALITY = 0.8;
+
 document.addEventListener('DOMContentLoaded', () => {
   const authBtn = document.getElementById('auth-btn');
-  const authSection = document.getElementById('auth-section');
-  const mainSection = document.getElementById('main-section');
+  const authStatus = document.getElementById('auth-status');
   const authError = document.getElementById('auth-error');
 
-  const albumSelect = document.getElementById('album-select');
+  const referencePhotosInput = document.getElementById('reference-photos');
+  const referenceStatus = document.getElementById('reference-status');
   const scanBtn = document.getElementById('scan-btn');
-  const albumStatus = document.getElementById('album-status');
   const scanStatus = document.getElementById('scan-status');
 
-  // Check initial auth state
+  // Reflect whatever auth state already exists, without gating the rest of the UI on it.
   chrome.runtime.sendMessage({ action: 'checkAuth' }, (response) => {
-    if (response && response.success) {
-      showMainUI();
-    }
+    if (response && response.success) showAuthenticated();
   });
 
-  // Handle Authentication
   authBtn.addEventListener('click', () => {
     authBtn.disabled = true;
     authBtn.textContent = 'Authenticating...';
 
     chrome.runtime.sendMessage({ action: 'authenticate' }, (response) => {
       if (response && response.success) {
-        showMainUI();
+        showAuthenticated();
       } else {
         authBtn.disabled = false;
         authBtn.textContent = 'Sign in with Google';
@@ -34,63 +34,68 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  function showMainUI() {
-    authSection.classList.add('hidden');
-    mainSection.classList.remove('hidden');
-    loadAlbums();
+  function showAuthenticated() {
+    authBtn.classList.add('hidden');
+    authError.classList.add('hidden');
+    authStatus.textContent = 'Connected. "Save to Photos" is enabled on scan results.';
   }
 
-  // Load albums from Google Photos
-  function loadAlbums() {
-    chrome.runtime.sendMessage({ action: 'getAlbums' }, (response) => {
-      if (response && response.success) {
-        albumSelect.innerHTML = '<option value="">-- Select an album --</option>';
-        response.albums.forEach(album => {
-          const option = document.createElement('option');
-          option.value = album.id;
-          option.textContent = album.title + ` (${album.mediaItemsCount || 0} items)`;
-          albumSelect.appendChild(option);
-        });
-
-        // Load previously selected album
-        chrome.storage.local.get(['selectedAlbumId'], (result) => {
-          if (result.selectedAlbumId) {
-            albumSelect.value = result.selectedAlbumId;
-            scanBtn.disabled = false;
-          }
-        });
-      } else {
-        const errorMessage = response ? response.error : 'No response from background script';
-        console.error('[Find Me] getAlbums failed:', errorMessage);
-        albumSelect.innerHTML = '<option value="">Error loading albums</option>';
-        albumStatus.textContent = errorMessage;
-      }
+  // Resize a locally-picked photo down to a small JPEG data URL, both to keep
+  // face detection fast and to stay well within chrome.storage.local's quota.
+  function resizeImageFile(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const img = new Image();
+        img.onload = () => {
+          const scale = Math.min(1, REFERENCE_PHOTO_MAX_DIM / Math.max(img.width, img.height));
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.round(img.width * scale);
+          canvas.height = Math.round(img.height * scale);
+          canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+          resolve(canvas.toDataURL('image/jpeg', REFERENCE_PHOTO_QUALITY));
+        };
+        img.onerror = () => reject(new Error('Failed to decode image'));
+        img.src = reader.result;
+      };
+      reader.onerror = () => reject(new Error('Failed to read file'));
+      reader.readAsDataURL(file);
     });
   }
 
-  // Save album selection
-  albumSelect.addEventListener('change', () => {
-    const albumId = albumSelect.value;
-    if (albumId) {
-      chrome.storage.local.set({ selectedAlbumId: albumId });
-      scanBtn.disabled = false;
-      albumStatus.textContent = "Album selected.";
-    } else {
-      scanBtn.disabled = true;
-      chrome.storage.local.remove(['selectedAlbumId']);
-      albumStatus.textContent = "";
+  function setReferenceStatus(count) {
+    referenceStatus.textContent = count > 0 ? `${count} photo(s) saved.` : '';
+    scanBtn.disabled = count === 0;
+  }
+
+  // Restore previously saved reference photos so re-opening the popup doesn't lose them.
+  chrome.storage.local.get(['referenceImages'], (result) => {
+    setReferenceStatus((result.referenceImages || []).length);
+  });
+
+  referencePhotosInput.addEventListener('change', async () => {
+    const files = Array.from(referencePhotosInput.files).slice(0, MAX_REFERENCE_PHOTOS);
+    if (files.length === 0) return;
+
+    referenceStatus.textContent = 'Processing photos...';
+    try {
+      const referenceImages = await Promise.all(files.map(resizeImageFile));
+      await chrome.storage.local.set({ referenceImages });
+      setReferenceStatus(referenceImages.length);
+    } catch (e) {
+      console.error('[Find Me] Failed to process reference photos:', e);
+      referenceStatus.textContent = 'Error processing photos.';
     }
   });
 
   // Trigger scan on the active tab
   scanBtn.addEventListener('click', async () => {
-    const albumId = albumSelect.value;
-    if (!albumId) return;
+    const { referenceImages } = await chrome.storage.local.get(['referenceImages']);
+    if (!referenceImages || referenceImages.length === 0) return;
 
     scanBtn.disabled = true;
     scanStatus.textContent = "Initializing scanner...";
 
-    // Get active tab
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab) {
       scanStatus.textContent = "Error: No active tab found.";
@@ -101,7 +106,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Tell background or content script to start scanning
     chrome.tabs.sendMessage(tab.id, {
       action: 'startScan',
-      albumId: albumId
+      referenceImages
     }, (response) => {
       if (chrome.runtime.lastError) {
         // Content script probably not injected yet
@@ -112,7 +117,7 @@ document.addEventListener('DOMContentLoaded', () => {
           // Try sending the message again
           chrome.tabs.sendMessage(tab.id, {
             action: 'startScan',
-            albumId: albumId
+            referenceImages
           });
           scanStatus.textContent = "Scan started! See page for details.";
         }).catch(err => {
