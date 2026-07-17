@@ -123,7 +123,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "authenticate") {
     getAuthToken(true)
       .then(token => sendResponse({ success: true, token }))
-      .catch(error => sendResponse({ success: false, error: error.message }));
+      .catch(error => {
+        console.error('[Find Me] authenticate failed:', error);
+        sendResponse({ success: false, error: error.message });
+      });
     return true;
   }
 
@@ -137,21 +140,30 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "getAlbums") {
     fetchAlbums()
       .then(albums => sendResponse({ success: true, albums }))
-      .catch(error => sendResponse({ success: false, error: error.message }));
+      .catch(error => {
+        console.error('[Find Me] getAlbums failed:', error);
+        sendResponse({ success: false, error: error.message });
+      });
     return true;
   }
 
   if (request.action === "getAlbumMedia") {
     fetchAlbumMedia(request.albumId)
       .then(mediaItems => sendResponse({ success: true, mediaItems }))
-      .catch(error => sendResponse({ success: false, error: error.message }));
+      .catch(error => {
+        console.error('[Find Me] getAlbumMedia failed:', error);
+        sendResponse({ success: false, error: error.message });
+      });
     return true;
   }
 
   if (request.action === "uploadImage") {
     uploadImage(request.dataUrl, request.fileName)
       .then(result => sendResponse({ success: true, result }))
-      .catch(error => sendResponse({ success: false, error: error.message }));
+      .catch(error => {
+        console.error('[Find Me] uploadImage failed:', error);
+        sendResponse({ success: false, error: error.message });
+      });
     return true;
   }
 });

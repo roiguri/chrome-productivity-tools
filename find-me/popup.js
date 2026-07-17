@@ -60,7 +60,10 @@ document.addEventListener('DOMContentLoaded', () => {
           }
         });
       } else {
+        const errorMessage = response ? response.error : 'No response from background script';
+        console.error('[Find Me] getAlbums failed:', errorMessage);
         albumSelect.innerHTML = '<option value="">Error loading albums</option>';
+        albumStatus.textContent = errorMessage;
       }
     });
   }
