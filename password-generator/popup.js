@@ -1,7 +1,7 @@
 document.addEventListener('DOMContentLoaded', () => {
   // Elements
   const passwordDisplay = document.getElementById('password-display');
-  const copyFeedback = document.getElementById('copy-feedback');
+  const copyBtn = document.getElementById('copy-btn');
   const regenerateBtn = document.getElementById('regenerate-btn');
   const toggleSettingsBtn = document.getElementById('toggle-settings-btn');
   const advancedSettings = document.getElementById('advanced-settings');
@@ -9,26 +9,40 @@ document.addEventListener('DOMContentLoaded', () => {
   // Settings Elements
   const lengthSlider = document.getElementById('length-slider');
   const lengthVal = document.getElementById('length-val');
-  const uppercaseCb = document.getElementById('uppercase-cb');
-  const lowercaseCb = document.getElementById('lowercase-cb');
-  const numbersCb = document.getElementById('numbers-cb');
-  const symbolsCb = document.getElementById('symbols-cb');
+  const chips = Array.from(document.querySelectorAll('.chip'));
 
-  // Character sets
-  const UPPERCASE_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-  const LOWERCASE_CHARS = 'abcdefghijklmnopqrstuvwxyz';
-  const NUMBER_CHARS = '0123456789';
-  const SYMBOL_CHARS = '!@#$%^&*()_+~`|}{[]:;?><,./-=';
+  // Strength meter
+  const strengthBar = document.getElementById('strength-bar');
+  const strengthLabel = document.getElementById('strength-label');
+
+  // Character sets, keyed by chip data-set
+  const CHAR_SETS = {
+    upper: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
+    lower: 'abcdefghijklmnopqrstuvwxyz',
+    number: '0123456789',
+    symbol: '!@#$%^&*()_+~`|}{[]:;?><,./-=',
+  };
+
+  let copyResetTimer = null;
 
   // Toggle advanced settings
   toggleSettingsBtn.addEventListener('click', () => {
     const isHidden = advancedSettings.classList.toggle('hidden');
-    toggleSettingsBtn.textContent = isHidden ? 'Advanced Settings ▼' : 'Hide Settings ▲';
+    toggleSettingsBtn.textContent = isHidden ? 'Advanced Settings ▾' : 'Hide Settings ▴';
+    toggleSettingsBtn.setAttribute('aria-expanded', String(!isHidden));
   });
 
   // Update length display when slider moves
   lengthSlider.addEventListener('input', (e) => {
     lengthVal.textContent = e.target.value;
+  });
+
+  // Toggle a character-type chip
+  chips.forEach((chip) => {
+    chip.addEventListener('click', () => {
+      chip.classList.toggle('active');
+      chip.setAttribute('aria-pressed', String(chip.classList.contains('active')));
+    });
   });
 
   // Cryptographically secure random number between 0 and max-1.
@@ -54,46 +68,31 @@ document.addEventListener('DOMContentLoaded', () => {
   // Generate password function
   function generatePassword() {
     const length = parseInt(lengthSlider.value);
-    const useUpper = uppercaseCb.checked;
-    const useLower = lowercaseCb.checked;
-    const useNumbers = numbersCb.checked;
-    const useSymbols = symbolsCb.checked;
+
+    // Active chips, or lowercase as a fallback if the user disabled everything.
+    let activeChips = chips.filter((c) => c.classList.contains('active'));
+    if (activeChips.length === 0) {
+      const lowerChip = chips.find((c) => c.dataset.set === 'lower');
+      lowerChip.classList.add('active');
+      lowerChip.setAttribute('aria-pressed', 'true');
+      activeChips = [lowerChip];
+    }
 
     let charset = '';
-
-    // Ensure at least one character from each selected set is included
     const requiredChars = [];
 
-    if (useUpper) {
-      charset += UPPERCASE_CHARS;
-      requiredChars.push(UPPERCASE_CHARS[getSecureRandomIndex(UPPERCASE_CHARS.length)]);
-    }
-    if (useLower) {
-      charset += LOWERCASE_CHARS;
-      requiredChars.push(LOWERCASE_CHARS[getSecureRandomIndex(LOWERCASE_CHARS.length)]);
-    }
-    if (useNumbers) {
-      charset += NUMBER_CHARS;
-      requiredChars.push(NUMBER_CHARS[getSecureRandomIndex(NUMBER_CHARS.length)]);
-    }
-    if (useSymbols) {
-      charset += SYMBOL_CHARS;
-      requiredChars.push(SYMBOL_CHARS[getSecureRandomIndex(SYMBOL_CHARS.length)]);
-    }
-
-    // Fallback if user unchecks everything
-    if (charset === '') {
-      charset = LOWERCASE_CHARS;
-      requiredChars.push(LOWERCASE_CHARS[getSecureRandomIndex(LOWERCASE_CHARS.length)]);
-      lowercaseCb.checked = true;
-    }
+    // Ensure at least one character from each selected set is included
+    activeChips.forEach((chip) => {
+      const set = CHAR_SETS[chip.dataset.set];
+      charset += set;
+      requiredChars.push(set[getSecureRandomIndex(set.length)]);
+    });
 
     // Fill the rest of the password
     const remainingLength = length - requiredChars.length;
     let passwordArray = [];
     for (let i = 0; i < remainingLength; i++) {
-      const randomIndex = getSecureRandomIndex(charset.length);
-      passwordArray.push(charset[randomIndex]);
+      passwordArray.push(charset[getSecureRandomIndex(charset.length)]);
     }
 
     // Add required characters and securely shuffle
@@ -103,36 +102,59 @@ document.addEventListener('DOMContentLoaded', () => {
     return passwordArray.join('');
   }
 
-  // Copy to clipboard function
+  // Estimate password strength from length and character-set variety, then
+  // paint the meter. Uses log2(poolSize) * length as an entropy proxy (bits).
+  function updateStrength(password) {
+    const pools = { upper: 26, lower: 26, number: 10, symbol: 32 };
+    let poolSize = 0;
+    if (/[A-Z]/.test(password)) poolSize += pools.upper;
+    if (/[a-z]/.test(password)) poolSize += pools.lower;
+    if (/[0-9]/.test(password)) poolSize += pools.number;
+    if (/[^A-Za-z0-9]/.test(password)) poolSize += pools.symbol;
+
+    const bits = password.length * Math.log2(poolSize || 1);
+
+    let label, color, pct;
+    if (bits < 40) { label = 'Weak'; color = 'var(--weak)'; pct = 25; }
+    else if (bits < 60) { label = 'Fair'; color = 'var(--fair)'; pct = 55; }
+    else if (bits < 80) { label = 'Good'; color = 'var(--good)'; pct = 80; }
+    else { label = 'Strong'; color = 'var(--strong)'; pct = 100; }
+
+    strengthBar.style.width = pct + '%';
+    strengthBar.style.background = color;
+    strengthLabel.textContent = label;
+    strengthLabel.style.color = color;
+  }
+
+  // Copy to clipboard and confirm on the copy button
   async function copyToClipboard(text) {
+    if (!text) return;
     try {
       await navigator.clipboard.writeText(text);
-      showFeedback();
+      showCopied();
     } catch (err) {
       console.error('Failed to copy: ', err);
     }
   }
 
-  // Show "Copied!" feedback
-  function showFeedback() {
-    copyFeedback.classList.remove('hidden');
-    setTimeout(() => {
-      copyFeedback.classList.add('hidden');
-    }, 1500);
+  function showCopied() {
+    copyBtn.classList.add('copied');
+    clearTimeout(copyResetTimer);
+    copyResetTimer = setTimeout(() => copyBtn.classList.remove('copied'), 1500);
   }
 
-  // Main flow: Generate, Display, and Copy
+  // Main flow: Generate, Display, Score, and Copy
   function handleGenerateAndCopy() {
     const newPassword = generatePassword();
     passwordDisplay.textContent = newPassword;
+    updateStrength(newPassword);
     copyToClipboard(newPassword);
   }
 
   // Event Listeners
   regenerateBtn.addEventListener('click', handleGenerateAndCopy);
-  passwordDisplay.addEventListener('click', () => {
-    copyToClipboard(passwordDisplay.textContent);
-  });
+  copyBtn.addEventListener('click', () => copyToClipboard(passwordDisplay.textContent));
+  passwordDisplay.addEventListener('click', () => copyToClipboard(passwordDisplay.textContent));
 
   // Generate and copy immediately on load
   handleGenerateAndCopy();

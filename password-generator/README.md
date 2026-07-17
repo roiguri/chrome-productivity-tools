@@ -8,7 +8,9 @@ A lightweight and fast Chrome extension that automatically generates a secure pa
 
 - **Instant Generation:** Click the extension icon to instantly generate and copy a secure password.
 - **Secure Defaults:** Generates a 16-character password containing uppercase letters, lowercase letters, numbers, and symbols by default.
-- **Configurable (On-Demand):** Access advanced settings to customize length (4-64 characters) and character sets (uppercase, lowercase, numbers, symbols).
+- **Strength Meter:** A live indicator rates each password (Weak → Strong) based on its length and character variety.
+- **One-Click Copy:** A dedicated copy button (with confirmation) sits alongside the password, in addition to click-to-copy.
+- **Configurable (On-Demand):** Access advanced settings to customize length (4-64 characters) and character sets via compact toggle chips (uppercase, lowercase, numbers, symbols).
 - **Ephemeral Settings:** To keep things secure and simple, settings are not saved between sessions. The extension always reverts to the safe default of 16 characters with all character types included.
 - **Manifest V3:** Built using the latest Chrome extension standards.
 - **Zero Tracking:** Operates entirely locally within your browser with no external requests or data collection.

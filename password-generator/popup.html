@@ -9,52 +9,62 @@
 <body>
   <div class="container">
     <div class="header">
+      <span class="header-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="4" y="10" width="16" height="10" rx="2.5"></rect>
+          <path d="M8 10V7a4 4 0 0 1 8 0v3"></path>
+          <circle cx="12" cy="15" r="1.4" fill="currentColor" stroke="none"></circle>
+        </svg>
+      </span>
       <h2>Password Generator</h2>
     </div>
 
     <div class="password-display-container">
       <div id="password-display" class="password-display" title="Click to copy"></div>
-      <div id="copy-feedback" class="copy-feedback hidden">Copied!</div>
+      <button id="copy-btn" class="copy-btn" title="Copy to clipboard" aria-label="Copy to clipboard">
+        <svg class="icon-copy" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="9" y="9" width="11" height="11" rx="2"></rect>
+          <path d="M5 15V5a2 2 0 0 1 2-2h10"></path>
+        </svg>
+        <svg class="icon-check" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M5 13l4 4L19 7"></path>
+        </svg>
+      </button>
     </div>
 
-    <button id="regenerate-btn" class="primary-btn">Regenerate</button>
+    <div class="strength">
+      <div class="strength-track">
+        <div id="strength-bar" class="strength-bar"></div>
+      </div>
+      <span id="strength-label" class="strength-label"></span>
+    </div>
+
+    <button id="regenerate-btn" class="primary-btn">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 12a8 8 0 0 1 13.7-5.7L20 8"></path>
+        <path d="M20 4v4h-4"></path>
+        <path d="M20 12a8 8 0 0 1-13.7 5.7L4 16"></path>
+        <path d="M4 20v-4h4"></path>
+      </svg>
+      Regenerate
+    </button>
 
     <div class="settings-toggle-container">
-      <button id="toggle-settings-btn" class="text-btn">Advanced Settings ▼</button>
+      <button id="toggle-settings-btn" class="text-btn" aria-expanded="false">Advanced Settings ▾</button>
     </div>
 
     <div id="advanced-settings" class="settings-container hidden">
       <div class="setting-row">
-        <label for="length-slider">Length: <span id="length-val">16</span></label>
-        <input type="range" id="length-slider" min="4" max="64" value="16">
+        <label for="length-slider">Length</label>
+        <span id="length-val" class="length-val">16</span>
       </div>
+      <input type="range" id="length-slider" min="4" max="64" value="16">
 
-      <div class="setting-row">
-        <label class="checkbox-label">
-          <input type="checkbox" id="uppercase-cb" checked>
-          Uppercase (A-Z)
-        </label>
-      </div>
-
-      <div class="setting-row">
-        <label class="checkbox-label">
-          <input type="checkbox" id="lowercase-cb" checked>
-          Lowercase (a-z)
-        </label>
-      </div>
-
-      <div class="setting-row">
-        <label class="checkbox-label">
-          <input type="checkbox" id="numbers-cb" checked>
-          Numbers (0-9)
-        </label>
-      </div>
-
-      <div class="setting-row">
-        <label class="checkbox-label">
-          <input type="checkbox" id="symbols-cb" checked>
-          Symbols (!@#$...)
-        </label>
+      <div class="chips" role="group" aria-label="Character types">
+        <button type="button" class="chip active" id="uppercase-cb" data-set="upper" aria-pressed="true">A-Z</button>
+        <button type="button" class="chip active" id="lowercase-cb" data-set="lower" aria-pressed="true">a-z</button>
+        <button type="button" class="chip active" id="numbers-cb" data-set="number" aria-pressed="true">0-9</button>
+        <button type="button" class="chip active" id="symbols-cb" data-set="symbol" aria-pressed="true">#$&amp;</button>
       </div>
     </div>
   </div>
