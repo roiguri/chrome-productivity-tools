@@ -288,3 +288,13 @@ input[type="range"]::-webkit-slider-thumb {
   color: #fff;
   box-shadow: 0 2px 8px rgba(43, 108, 246, 0.28);
 }
+
+.chip.shake {
+  animation: chip-shake 0.3s ease;
+}
+
+@keyframes chip-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-3px); }
+  75% { transform: translateX(3px); }
+}

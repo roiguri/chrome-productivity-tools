@@ -75,12 +75,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
   updateSliderFill();
 
-  // Toggle a character-type chip
+  // Toggle a character-type chip. At least one type must stay selected, so
+  // turning off the last active chip is blocked (with a brief shake).
   chips.forEach((chip) => {
     chip.addEventListener('click', () => {
+      const activeCount = chips.filter((c) => c.classList.contains('active')).length;
+      if (chip.classList.contains('active') && activeCount === 1) {
+        chip.classList.remove('shake');
+        void chip.offsetWidth; // restart the animation
+        chip.classList.add('shake');
+        return;
+      }
       chip.classList.toggle('active');
       chip.setAttribute('aria-pressed', String(chip.classList.contains('active')));
     });
+    chip.addEventListener('animationend', () => chip.classList.remove('shake'));
   });
 
   // Cryptographically secure random number between 0 and max-1.
@@ -186,14 +195,41 @@ document.addEventListener('DOMContentLoaded', () => {
     strengthLabel.style.color = tier.color;
   }
 
-  // Copy to clipboard and confirm on the copy button
+  // Legacy textarea + execCommand copy. Works when the async Clipboard API is
+  // unavailable or refuses (e.g. auto-copy on open, before the popup is focused).
+  function legacyCopy(text) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.top = '-9999px';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    let ok = false;
+    try {
+      ok = document.execCommand('copy');
+    } catch (err) {
+      ok = false;
+    }
+    document.body.removeChild(ta);
+    return ok;
+  }
+
+  // Copy to clipboard and confirm on the copy button. Prefer the async
+  // Clipboard API, but fall back to execCommand when it rejects — notably the
+  // "Document is not focused" error thrown during the copy-on-open flow.
   async function copyToClipboard(text) {
     if (!text) return;
     try {
       await navigator.clipboard.writeText(text);
       showCopied();
     } catch (err) {
-      console.error('Failed to copy: ', err);
+      if (legacyCopy(text)) {
+        showCopied();
+      } else {
+        console.error('Failed to copy: ', err);
+      }
     }
   }
 
