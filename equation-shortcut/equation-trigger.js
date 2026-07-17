@@ -301,6 +301,79 @@ async function typeCommandSequence(str) {
   }
 }
 
+/**
+ * Reads a subscript/superscript argument beginning at text[i] (which is '_' or
+ * '^'). Handles both braced ({...}, brace-balanced) and single-character forms.
+ * @param {string} text
+ * @param {number} i
+ * @returns {{kind: string, content: string, next: number}}
+ */
+function readScriptArg(text, i) {
+  const kind = text[i]; // '_' or '^'
+  i++;
+  let content = '';
+  if (text[i] === '{') {
+    i++; // skip {
+    let depth = 1;
+    while (i < text.length && depth > 0) {
+      if (text[i] === '{') {
+        depth++;
+      } else if (text[i] === '}') {
+        depth--;
+        if (depth === 0) break;
+      }
+      content += text[i++];
+    }
+    if (i < text.length) i++; // skip closing }
+  } else if (text[i] === '\\') {
+    // Unbraced \command argument, e.g. ^\infty — capture the whole token.
+    content += text[i++]; // backslash
+    if (i < text.length && /[a-zA-Z]/.test(text[i])) {
+      while (i < text.length && /[a-zA-Z]/.test(text[i])) content += text[i++];
+    } else if (i < text.length) {
+      content += text[i++]; // non-alpha escape like \{
+    }
+  } else if (i < text.length) {
+    content = text[i++]; // single character
+  }
+  return { kind, content, next: i };
+}
+
+/**
+ * Fills the below/above slots of a Docs "limits" template (already opened by
+ * "\op "). The cursor starts in the BELOW slot. Reads the following _ and ^
+ * arguments (in either order), types below, ArrowRight to the ABOVE slot, types
+ * above, ArrowRight to exit the template.
+ * @param {string} text
+ * @param {number} i
+ * @returns {Promise<number>}
+ */
+async function typeLimitScripts(text, i) {
+  let below = '';
+  let above = '';
+  // Up to two scripts may follow, in either order (\sum_{}^{} or \sum^{}_{}).
+  for (let n = 0; n < 2; n++) {
+    if (text[i] === '_' || text[i] === '^') {
+      const arg = readScriptArg(text, i);
+      if (arg.kind === '_') {
+        below = arg.content;
+      } else {
+        above = arg.content;
+      }
+      i = arg.next;
+    }
+  }
+
+  // Cursor is in the below slot: type it, move up to the above slot, type it, exit.
+  if (below) await typeEquationText(below);
+  dispatchKey('ArrowRight', { code: 'ArrowRight', keyCode: 39 });
+  await sleep(30);
+  if (above) await typeEquationText(above);
+  dispatchKey('ArrowRight', { code: 'ArrowRight', keyCode: 39 });
+  await sleep(30);
+  return i;
+}
+
 async function handleLatexCommand(text, i) {
   i++; // skip backslash
 
@@ -360,6 +433,13 @@ async function handleLatexCommand(text, i) {
   // buffer is built through its normal keyboard pipeline (input events bypass it)
   await typeCommandSequence('\\' + name);
 
+  if (MATHQUILL_LIMIT_OPERATORS.has(name)) {
+    // "\sum " opens Docs' limits template with the cursor in the BELOW slot.
+    await typeCommandSequence(' ');
+    await sleep(50);
+    return await typeLimitScripts(text, i);
+  }
+
   if (MATHQUILL_BOX_COMMANDS.has(name)) {
     // Space (keydown+keypress) triggers MathQuill command conversion
     await typeCommandSequence(' ');
@@ -416,7 +496,15 @@ async function handleLatexCommand(text, i) {
     return i;
   }
 
-  // Unknown no-arg command: \cmdname was already typed, leave as-is
+  // No-arg command Google Docs supports natively (e.g. \delta, \pi, \sum, \int):
+  // press Space to trigger MathQuill's command conversion. Without this the
+  // command only converts when the source happens to have a trailing space, so a
+  // command at the end of a group, sub/superscript, or box renders literally.
+  await typeCommandSequence(' ');
+  await sleep(50);
+  // Our trigger space stands in for a separating space in the source, so consume
+  // one if present to avoid inserting a stray space after the symbol.
+  if (text[i] === ' ') i++;
   return i;
 }
 

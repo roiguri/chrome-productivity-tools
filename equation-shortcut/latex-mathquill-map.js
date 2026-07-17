@@ -37,6 +37,20 @@ const MATHQUILL_TWO_ARG_COMMANDS = new Set([
   'frac', 'dfrac', 'tfrac', 'binom',
 ]);
 
+// Big "limits" operators. In Google Docs, typing "\sum " (etc.) opens an
+// interactive limits template and parks the cursor in the BELOW slot; a Right
+// arrow moves to the ABOVE slot. So the underscore/caret in the LaTeX source
+// are NOT typed as scripts — their contents are typed straight into the slots.
+// Sequence: \op + Space -> type below -> ArrowRight -> type above -> ArrowRight.
+// Integrals (\int, \oint, …) open the same template in Docs, so they belong here
+// too — their bounds go into the slots rather than being typed as _ / ^ scripts.
+const MATHQUILL_LIMIT_OPERATORS = new Set([
+  'sum', 'prod', 'coprod',
+  'int', 'iint', 'iiint', 'iiiint', 'oint', 'oiint', 'oiiint',
+  'bigcup', 'bigcap', 'bigsqcup', 'biguplus',
+  'bigoplus', 'bigotimes', 'bigodot', 'bigvee', 'bigwedge',
+]);
+
 // Commands to strip entirely — MathQuill handles delimiter sizing automatically.
 // e.g. \left( becomes (, \right) becomes )
 const MATHQUILL_STRIP_COMMANDS = new Set([
