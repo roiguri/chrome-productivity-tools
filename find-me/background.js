@@ -61,10 +61,12 @@ async function fetchImageAsDataUrl(url) {
   return `data:${type};base64,${btoa(binary)}`;
 }
 
-// Upload a single image (from base64 or blob URL data) to Google Photos
-async function uploadImage(dataUrl, fileName) {
-  // First, upload the raw bytes to get an upload token
-  const response = await fetch(dataUrl);
+// Upload a single image to Google Photos by URL. Fetching here (in the worker)
+// bypasses the page's CORS policy under <all_urls>, and we upload the original
+// bytes unchanged -- no re-encoding -- so quality is preserved.
+async function uploadImage(url, fileName) {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Failed to fetch image (${response.status})`);
   const blob = await response.blob();
 
   const token = await getAuthToken(false);
@@ -130,7 +132,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.action === "uploadImage") {
-    uploadImage(request.dataUrl, request.fileName)
+    uploadImage(request.url, request.fileName)
       .then(result => sendResponse({ success: true, result }))
       .catch(error => {
         console.error('[Find Me] uploadImage failed:', error);

@@ -197,36 +197,25 @@ function updateStatus(text) {
 }
 
 // Convert an image element to a data URL, fetching bytes directly so the
-// canvas is never tainted regardless of the source's CORS policy.
-async function getImageDataUrl(imgEl) {
-  const img = await loadImage(imgEl.src);
-  const canvas = document.createElement('canvas');
-  canvas.width = img.naturalWidth || imgEl.naturalWidth;
-  canvas.height = img.naturalHeight || imgEl.naturalHeight;
-  const ctx = canvas.getContext('2d');
-  ctx.drawImage(img, 0, 0);
-  return canvas.toDataURL('image/jpeg');
-}
-
-// Upload the image to Google Photos
+// Upload the matched image to Google Photos. The background worker fetches the
+// original image bytes and uploads them unchanged -- no canvas re-encode -- so
+// the source image's quality is preserved exactly.
 async function uploadToGooglePhotos(imgEl) {
-  return new Promise(async (resolve, reject) => {
-    try {
-      const dataUrl = await getImageDataUrl(imgEl);
-      chrome.runtime.sendMessage({
-        action: 'uploadImage',
-        dataUrl: dataUrl,
-        fileName: 'found-image.jpg'
-      }, (response) => {
-        if (response && response.success) {
-          resolve(response.result);
-        } else {
-          reject(new Error(response ? response.error : 'Upload failed'));
-        }
-      });
-    } catch (e) {
-      reject(e);
-    }
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage({
+      action: 'uploadImage',
+      url: imgEl.currentSrc || imgEl.src,
+      fileName: 'found-image.jpg'
+    }, (response) => {
+      if (chrome.runtime.lastError) {
+        return reject(new Error(chrome.runtime.lastError.message));
+      }
+      if (response && response.success) {
+        resolve(response.result);
+      } else {
+        reject(new Error(response ? response.error : 'Upload failed'));
+      }
+    });
   });
 }
 
