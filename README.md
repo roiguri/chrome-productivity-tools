@@ -145,9 +145,9 @@ Finds photos of you on the current webpage and allows you to save them to Google
 - **Version:** 1.0.0
 - **Footprint:** ~19MB (bundles local ML models) — not lightweight like the other extensions here
 - **Features:**
-  - Local facial recognition in browser
-  - Integrates with Google Photos
+  - Local facial recognition in browser using photos you provide from your computer
   - Discovers photos on active tabs
+  - Optional Google Photos integration to save matches
 
 [📖 Read more →](./find-me/README.md)
 

@@ -1,31 +1,33 @@
 # Find Me
 
-Finds photos of you on the current webpage and allows you to save them to Google Photos.
+Finds photos of you on the current webpage and lets you save matches to Google Photos.
 
 > **Note:** Unlike the other extensions in this repo, Find Me is not lightweight — it bundles the `face-api.js` library and its ML models (~19MB total) for local face detection/recognition.
 
 ## Features
-- Scans `<img>` tags on the current page for faces that match your reference face.
+- Scans `<img>` tags on the current page for faces that match reference photos you provide.
 - Runs face detection locally in your browser.
-- Integrates with Google Photos to fetch a reference album and upload matched photos.
+- Reference face photos are picked from your computer — no Google Photos access needed for scanning.
+- Optionally saves matched photos to Google Photos.
 - Displays an in-page overlay with progress and found images.
 
 ## Setup
+Scanning works with no setup — just load the extension and add reference photos. Google Photos sign-in is only needed for the optional "Save to Photos" button:
 1. You will need a Google Cloud Project with the **Google Photos Library API** enabled.
 2. Create an OAuth 2.0 Client ID (type: Web Application or Chrome App).
 3. Open `manifest.json` and replace `REPLACE_WITH_CLIENT_ID` with your actual Client ID.
 4. Load the extension in Chrome (Developer mode -> Load unpacked).
 
 ## 🔒 Privacy Implications
-This extension interacts with your Google Photos data and process images on the websites you visit.
+This extension processes images on the websites you visit and, optionally, interacts with your Google Photos account.
 - **Local AI Processing**: Face detection and recognition are performed **entirely locally** within your browser using WebGPU/WebGL (via face-api.js).
 - **No Third-Party Servers**: Images from the websites you visit are never sent to any external server for analysis.
+- **Local Reference Photos**: The photos you use as your reference face are read from your computer and stored only in the browser's local extension storage — they're never uploaded anywhere.
 - **Broad Host Permission**: The extension requests access to all sites (`<all_urls>`) so it can fetch image bytes directly and detect faces regardless of a site's CORS policy. This access is only exercised when you click "Scan This Page" — no background/passive access to sites you visit.
-- **Google Photos Access**: The extension requires access to your Google Photos account to read your reference album and to upload photos you select. The OAuth token is stored locally in your browser and used only to communicate directly with the Google Photos API (`https://photoslibrary.googleapis.com`).
+- **Google Photos Access (optional)**: Only requested if you click "Sign in with Google" to enable saving matches. The extension requests add-only access (`photoslibrary.appendonly`) — it can upload photos you select but cannot read or modify your existing library. The OAuth token is stored locally in your browser and used only to communicate directly with the Google Photos API (`https://photoslibrary.googleapis.com`).
 
 ## How to use
 1. Click the extension icon.
-2. Authenticate with Google.
-3. Select an album containing photos of your face.
-4. Click "Scan this page" to find matches.
-5. Select images to upload to Google Photos or download.
+2. Add up to 5 clear reference photos of your face from your computer.
+3. Click "Scan This Page" to find matches.
+4. (Optional) Sign in with Google, then click "Save to Photos" on any match to upload it.
