@@ -61,6 +61,60 @@
       color: #5f6368;
       margin-top: 8px;
     }
+    .thumb-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin: 8px 0 0;
+    }
+    .thumb {
+      position: relative;
+      width: 56px;
+      height: 56px;
+      border-radius: 4px;
+      overflow: hidden;
+      border: 1px solid #ddd;
+    }
+    .thumb img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    .thumb .thumb-remove {
+      position: absolute;
+      top: 2px;
+      right: 2px;
+      width: 16px;
+      height: 16px;
+      padding: 0;
+      margin: 0;
+      line-height: 14px;
+      font-size: 12px;
+      font-weight: bold;
+      border: none;
+      border-radius: 50%;
+      background: rgba(0, 0, 0, 0.6);
+      color: #fff;
+      cursor: pointer;
+    }
+    .thumb .thumb-remove:hover {
+      background: rgba(0, 0, 0, 0.85);
+    }
+    .thumb .thumb-badge {
+      position: absolute;
+      bottom: 2px;
+      left: 2px;
+      min-width: 16px;
+      height: 16px;
+      padding: 0 3px;
+      line-height: 16px;
+      text-align: center;
+      font-size: 11px;
+      font-weight: bold;
+      border-radius: 8px;
+      color: #fff;
+    }
   </style>
 </head>
 <body>
@@ -70,6 +124,7 @@
     <label for="reference-photos"><strong>1. Add Reference Photos of Your Face</strong></label>
     <p style="font-size: 12px; color: #666; margin-top: 4px;">Choose up to 5 clear photos of your face. They're stored locally in your browser and never uploaded anywhere.</p>
     <input type="file" id="reference-photos" accept="image/*" multiple>
+    <div id="reference-thumbs" class="thumb-grid"></div>
     <div id="reference-status" class="status"></div>
   </div>
 
