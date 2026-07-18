@@ -37,11 +37,34 @@
       background-color: #ccc;
       cursor: not-allowed;
     }
-    input[type="file"] {
+    /* Hide the native file input; a styled label drives it instead. */
+    input[type="file"].visually-hidden {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      border: 0;
+    }
+    .file-button {
+      display: block;
       width: 100%;
-      padding: 6px 0;
-      margin-bottom: 4px;
-      font-size: 12px;
+      box-sizing: border-box;
+      margin-top: 4px;
+      padding: 8px 12px;
+      border: 1px solid #4285F4;
+      border-radius: 4px;
+      background: #fff;
+      color: #4285F4;
+      font-size: 13px;
+      font-weight: bold;
+      text-align: center;
+      cursor: pointer;
+    }
+    .file-button:hover {
+      background: #f5f9ff;
     }
     .section {
       margin-bottom: 16px;
@@ -121,9 +144,10 @@
   <h1><img src="icons/icon48.png" width="24" height="24"> Find Me</h1>
 
   <div class="section">
-    <label for="reference-photos"><strong>1. Add Reference Photos of Your Face</strong></label>
+    <div><strong>1. Add Reference Photos of Your Face</strong></div>
     <p style="font-size: 12px; color: #666; margin-top: 4px;">Choose up to 5 clear photos of your face. They're stored locally in your browser and never uploaded anywhere.</p>
-    <input type="file" id="reference-photos" accept="image/*" multiple>
+    <input type="file" id="reference-photos" accept="image/*" multiple class="visually-hidden">
+    <label for="reference-photos" class="file-button">＋ Add photos</label>
     <div id="reference-thumbs" class="thumb-grid"></div>
     <div id="reference-status" class="status"></div>
   </div>
