@@ -2,7 +2,8 @@
 let modelsLoaded = false;
 let referenceDescriptor = null;
 let container = null;
-let scanAborted = false; // set when the user closes the bar mid-scan
+let scanAborted = false; // set when the user closes the bar or stops mid-scan
+let matchThreshold = 0.6; // euclidean distance cutoff; set per-scan from the popup slider
 
 const SCAN_MAX_DIM = 640;   // px: downscale page images before detection for speed
 const THUMB_MAX_DIM = 200;  // px: small thumbnails for the results drawer
@@ -164,6 +165,14 @@ const FIND_ME_CSS = `
   .count { background: rgba(255,255,255,.25); border-radius: 10px; padding: 1px 9px; font-size: 12px; min-width: 20px; text-align: center; }
   .x { background: none; border: none; color: inherit; font-size: 18px; line-height: 1; cursor: pointer; padding: 0 2px; }
   .status { padding: 7px 12px; font-size: 12px; color: #5f6368; border-bottom: 1px solid #eee; }
+  .progress { height: 3px; background: #e8eaed; overflow: hidden; position: relative; }
+  .progress .fill { position: absolute; top: 0; bottom: 0; width: 42%; background: #4285F4; animation: fmslide 1.1s ease-in-out infinite; }
+  @keyframes fmslide { 0% { left: -45%; } 100% { left: 100%; } }
+  @media (prefers-reduced-motion: reduce) { .progress .fill { animation: none; left: 0; width: 100%; opacity: .5; } }
+  .controls { padding: 8px 10px; }
+  .stopbtn { width: 100%; padding: 7px; border-radius: 8px; border: 1px solid #d93025; background: #fff; color: #d93025;
+    font-weight: 700; font-size: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; }
+  .stopbtn:hover { background: #fce8e6; }
   .preview { padding: 10px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
   .p-tile, .more { aspect-ratio: 1/1; border-radius: 6px; overflow: hidden; cursor: pointer; }
   .p-tile { background: #f1f3f4; }
@@ -214,9 +223,11 @@ const FIND_ME_CSS = `
 
 const FIND_ME_HTML = `
   <div class="bar">
-    <div class="bar-head"><span class="title">Find Me</span><span class="count" id="barCount">0</span><button class="x" id="barClose" title="Stop &amp; close">&times;</button></div>
+    <div class="bar-head"><span class="title">Find Me</span><span class="count" id="barCount">0</span><button class="x" id="barClose" title="Close">&times;</button></div>
     <div class="status" id="status">Initializing…</div>
-    <div class="preview" id="preview"></div>
+    <div class="progress" id="progress" hidden><div class="fill"></div></div>
+    <div class="controls" id="controls" hidden><button class="stopbtn" id="stopBtn">&#9632; Stop scan</button></div>
+    <div class="preview" id="preview" hidden></div>
     <button class="viewall" id="viewAll" hidden>View all</button>
   </div>
   <div class="overlay" id="overlay" hidden>
@@ -255,6 +266,7 @@ function setupUI() {
   document.body.appendChild(container);
 
   fm('#barClose').addEventListener('click', teardownUI);
+  fm('#stopBtn').addEventListener('click', stopScan);
   fm('#viewAll').addEventListener('click', openGallery);
   fm('#galClose').addEventListener('click', closeGallery);
   fm('#backdrop').addEventListener('click', closeGallery);
@@ -277,6 +289,23 @@ function updateStatus(text) {
   if (el) el.textContent = text;
 }
 
+// Show/hide the activity bar and the Stop button together -- they only make
+// sense while a scan is actually running.
+function setScanning(on) {
+  const p = fm('#progress');
+  const c = fm('#controls');
+  if (p) p.hidden = !on;
+  if (c) c.hidden = !on;
+}
+
+// Stop the scan but keep the bar and the matches found so far (unlike the ×
+// close button, which tears the whole UI down).
+function stopScan() {
+  scanAborted = true;
+  setScanning(false);
+  updateStatus(`Scan stopped · ${matches.length} match(es) so far`);
+}
+
 function openGallery() { const o = fm('#overlay'); if (o) o.hidden = false; }
 function closeGallery() { const o = fm('#overlay'); if (o) o.hidden = true; }
 
@@ -292,8 +321,10 @@ function addMatch(url, thumb) {
   viewAll.hidden = false;
   viewAll.textContent = `View all ${n} →`;
 
-  // slim bar preview: first PREVIEW_MAX thumbnails, then a growing "+N" tile
+  // slim bar preview: first PREVIEW_MAX thumbnails, then a growing "+N" tile.
+  // Stays hidden until the first match so the bar isn't an empty box mid-scan.
   const preview = fm('#preview');
+  preview.hidden = false;
   if (idx < PREVIEW_MAX) {
     const t = document.createElement('div');
     t.className = 'p-tile';
@@ -421,8 +452,9 @@ async function scanImage(img) {
   let matched = false;
   for (const detection of detections) {
     const distance = faceapi.euclideanDistance(referenceDescriptor, detection.descriptor);
-    // Distance < 0.6 is generally considered a match for this model
-    if (distance < 0.6) {
+    // Smaller distance = closer match. matchThreshold comes from the popup's
+    // strictness slider (~0.6 is the model's usual match cutoff).
+    if (distance < matchThreshold) {
       const thumbSrc = downscaleToCanvas(fullImg, THUMB_MAX_DIM).toDataURL('image/jpeg', 0.8);
       addMatch(img.currentSrc || img.src, thumbSrc);
       matched = true;
@@ -435,9 +467,11 @@ async function scanImage(img) {
 // Main scan logic. When autoScroll is set, the page is scrolled progressively
 // and newly loaded images are scanned as they appear (streaming), rather than
 // waiting for the whole gallery to load first.
-async function runScan(referenceImages, autoScroll) {
+async function runScan(referenceImages, autoScroll, threshold) {
   scanAborted = false;
+  matchThreshold = (typeof threshold === 'number' && threshold > 0) ? threshold : 0.6;
   setupUI();
+  setScanning(true);
   updateStatus("Loading AI Models...");
 
   const AUTO_SCROLL_STEP = 0.8;      // fraction of viewport height per scroll
@@ -511,18 +545,22 @@ async function runScan(referenceImages, autoScroll) {
       }
     }
 
-    updateStatus(`Scan complete · ${scannedCount} images · ${matchCount} match(es)`);
+    updateStatus(scanAborted
+      ? `Scan stopped · ${scannedCount} images · ${matchCount} match(es)`
+      : `Scan complete · ${scannedCount} images · ${matchCount} match(es)`);
 
   } catch (error) {
     console.error("Scan Error:", error);
     updateStatus(`Error: ${error.message}`);
+  } finally {
+    setScanning(false); // hide the activity bar + Stop button when the scan ends
   }
 }
 
 // Listen for trigger from popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'startScan') {
-    runScan(request.referenceImages, request.autoScroll);
+    runScan(request.referenceImages, request.autoScroll, request.threshold);
     sendResponse({ started: true });
   }
 });
