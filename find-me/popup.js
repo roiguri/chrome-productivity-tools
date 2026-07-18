@@ -87,6 +87,23 @@ document.addEventListener('DOMContentLoaded', () => {
   const referenceStatus = document.getElementById('reference-status');
   const scanBtn = document.getElementById('scan-btn');
   const scanStatus = document.getElementById('scan-status');
+  const sensitivity = document.getElementById('sensitivity');
+  const sensLabelEl = document.getElementById('sens-label');
+
+  // Map the raw euclidean-distance cutoff to a plain-language label. Smaller
+  // distance = stricter (fewer, surer matches); larger = looser.
+  const sensLabel = (v) => (v <= 0.5 ? 'Strict' : v <= 0.6 ? 'Balanced' : 'Loose');
+
+  // Restore the saved strictness, then keep it in sync + persisted as it moves.
+  chrome.storage.local.get(['matchThreshold']).then(({ matchThreshold }) => {
+    if (typeof matchThreshold === 'number') sensitivity.value = String(matchThreshold);
+    sensLabelEl.textContent = sensLabel(parseFloat(sensitivity.value));
+  });
+  sensitivity.addEventListener('input', () => {
+    const v = parseFloat(sensitivity.value);
+    sensLabelEl.textContent = sensLabel(v);
+    chrome.storage.local.set({ matchThreshold: v });
+  });
 
   // Reflect whatever auth state already exists, without gating the rest of the UI on it.
   chrome.runtime.sendMessage({ action: 'checkAuth' }, (response) => {
@@ -338,9 +355,12 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    const scanMessage = { action: 'startScan', referenceImages, autoScroll };
+    const threshold = parseFloat(sensitivity.value);
+    const scanMessage = { action: 'startScan', referenceImages, autoScroll, threshold };
 
-    // Tell background or content script to start scanning
+    // Tell background or content script to start scanning. Once the scan is
+    // under way we close the popup so the results bar on the page is unobstructed;
+    // we only keep the popup open to surface an error (e.g. an unscannable page).
     chrome.tabs.sendMessage(tab.id, scanMessage, (response) => {
       if (chrome.runtime.lastError) {
         // Content script probably not injected yet
@@ -348,20 +368,17 @@ document.addEventListener('DOMContentLoaded', () => {
           target: { tabId: tab.id },
           files: ['face-api.min.js', 'content.js']
         }).then(() => {
-          // Try sending the message again
+          // Try sending the message again, then step aside.
           chrome.tabs.sendMessage(tab.id, scanMessage);
-          scanStatus.textContent = "Scan started! See page for details.";
+          window.close();
         }).catch(err => {
           scanStatus.textContent = "Error: Cannot run on this page.";
+          scanBtn.disabled = false;
           console.error(err);
         });
       } else {
-        scanStatus.textContent = "Scan started! See page for details.";
+        window.close();
       }
-
-      setTimeout(() => {
-        scanBtn.disabled = false;
-      }, 3000);
     });
   });
 });
