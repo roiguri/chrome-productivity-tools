@@ -316,6 +316,24 @@ function setScanning(on) {
   if (c) c.hidden = !on;
 }
 
+// Block while the tab is backgrounded. A hidden tab has its timers throttled to
+// ~1s and its lazy-load (IntersectionObserver) callbacks suspended, so pressing
+// on would crawl and -- with auto-scroll -- falsely reach "complete" having
+// loaded nothing new. Pause instead and resume when the user returns.
+function waitWhileHidden() {
+  if (!document.hidden || scanAborted) return Promise.resolve();
+  updateStatus("Paused — switch back to this tab to resume scanning…");
+  return new Promise(resolve => {
+    const onChange = () => {
+      if (!document.hidden || scanAborted) {
+        document.removeEventListener('visibilitychange', onChange);
+        resolve();
+      }
+    };
+    document.addEventListener('visibilitychange', onChange);
+  });
+}
+
 // Stop the scan but keep the bar and the matches found so far (unlike the ×
 // close button, which tears the whole UI down).
 function stopScan() {
@@ -519,6 +537,7 @@ async function runScan(referenceImages, autoScroll, threshold) {
       });
 
       for (const img of fresh) {
+        await waitWhileHidden();
         if (scanAborted) break;
         seen.add(img.currentSrc || img.src);
         scannedCount++;
@@ -542,6 +561,8 @@ async function runScan(referenceImages, autoScroll, threshold) {
       let passes = 0;
       while (passes < MAX_SCROLL_PASSES && !scanAborted) {
         passes++;
+        await waitWhileHidden(); // don't scroll / judge "at bottom" while hidden
+        if (scanAborted) break;
         const found = await scanNewImages();
         if (scanAborted) break;
 
