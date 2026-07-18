@@ -1,4 +1,22 @@
 // content.js
+
+// face-api reads pixels off 2D canvases with getImageData on nearly every image
+// it processes (its own createCanvasFromMedia path, plus our downscale below).
+// Chrome floods the console with "getImageData is faster with willReadFrequently"
+// for each of those readbacks. face-api calls getContext('2d') with no options,
+// so we default the flag on here. This runs in the content script's isolated
+// world, so it only affects canvases created by our code and face-api, never the
+// host page's own canvases.
+(function forceWillReadFrequently() {
+  const orig = HTMLCanvasElement.prototype.getContext;
+  HTMLCanvasElement.prototype.getContext = function (type, attrs) {
+    if (type === '2d') {
+      attrs = Object.assign({ willReadFrequently: true }, attrs);
+    }
+    return orig.call(this, type, attrs);
+  };
+})();
+
 let modelsLoaded = false;
 let referenceDescriptor = null;
 let container = null;
