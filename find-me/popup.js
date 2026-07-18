@@ -366,7 +366,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Content script probably not injected yet
         chrome.scripting.executeScript({
           target: { tabId: tab.id },
-          files: ['face-api.min.js', 'content.js']
+          files: ['face-api.min.js', 'adapters.js', 'content.js']
         }).then(() => {
           // Try sending the message again, then step aside.
           chrome.tabs.sendMessage(tab.id, scanMessage);

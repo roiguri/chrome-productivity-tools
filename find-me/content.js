@@ -17,6 +17,12 @@
   };
 })();
 
+// Debug toggle: when true, logs verbose per-image detection info to the console
+// ("[Find Me][dbg]" lines -- faces found, best distance, chosen scroller). Left
+// in as a one-line switch because scan behaviour varies a lot per site. Off by
+// default.
+const FM_DEBUG = false;
+
 let modelsLoaded = false;
 let referenceDescriptor = null;
 let container = null;
@@ -93,6 +99,32 @@ async function loadImage(url) {
 
   const src = url.startsWith('data:') ? url : await fetchImageViaBackground(url);
   return decode(src);
+}
+
+const IMAGE_LOAD_TIMEOUT_MS = 20000; // per-image cap so one stuck fetch can't freeze the scan
+const DETECT_TIMEOUT_MS = 30000;     // per-image cap on face-api detection
+
+// face-api can reject out-of-band (a floating internal promise) when it extracts
+// a zero-width face box -- "getImageData ... source width is 0". We already skip
+// the images that trigger it and time-box detection, so swallow this specific
+// rejection to keep it from spamming the console as "Uncaught (in promise)".
+window.addEventListener('unhandledrejection', (ev) => {
+  const msg = ev.reason && (ev.reason.message || String(ev.reason));
+  if (msg && msg.includes('getImageData') && msg.includes('source width is 0')) {
+    ev.preventDefault();
+  }
+});
+
+// Reject `promise` if it hasn't settled within `ms`, so a single hung step
+// (typically a stalled cross-origin fetch) can't stall the whole scan loop.
+function withTimeout(promise, ms, label) {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(`${label || 'operation'} timed out after ${ms}ms`)), ms);
+    promise.then(
+      (v) => { clearTimeout(t); resolve(v); },
+      (e) => { clearTimeout(t); reject(e); }
+    );
+  });
 }
 
 // Ensure face-api models are loaded
@@ -473,31 +505,95 @@ function runBulk(kind) {
   }
 }
 
-// Scan a single already-loaded <img> for a match, appending to the drawer if
-// the reference face is found. Returns true if it was a match.
-async function scanImage(img) {
-  const fullImg = await loadImage(img.currentSrc || img.src);
+// Scan a single candidate for a match, appending to the drawer if the reference
+// face is found. Detects on the on-page pixels when they're large enough;
+// otherwise fetches the resolved full-res so tiny grid thumbnails still match.
+// Always *saves* the full-res URL. Returns true if it was a match.
+async function scanCandidate(cand) {
+  const fullResUrl = getAdapter().resolveFullRes(cand);
+
+  const rendered = renderedLongestSide(cand);
+  const scanUrl = (fullResUrl !== cand.src && rendered && rendered < SMALL_THUMB_DIM)
+    ? fullResUrl
+    : (cand.src || fullResUrl);
+
+  // Time-box the load: a single stalled fetch (a huge original, or an MV3
+  // worker that drops the response) must not freeze the whole scan. On timeout
+  // this rejects and the scan loop's catch moves on to the next image.
+  const fullImg = await withTimeout(loadImage(scanUrl), IMAGE_LOAD_TIMEOUT_MS, 'image load');
+
+  // Some backgrounds/broken URLs "load" but decode to zero size, and thin
+  // strips (banners, 640x3 background slivers) make face-api extract a
+  // zero-width face box and throw inside getImageData. Skip anything that isn't
+  // a plausibly-photo-shaped bitmap before detection.
+  const iw = fullImg.naturalWidth || fullImg.width;
+  const ih = fullImg.naturalHeight || fullImg.height;
+  if (!iw || !ih || Math.max(iw, ih) < 32 || Math.min(iw, ih) < 24) {
+    if (FM_DEBUG) console.log('[Find Me][dbg] skip non-photo image', `${iw}x${ih}`, scanUrl.slice(0, 90));
+    return false;
+  }
+
   // Detect on a downscaled copy -- far less work than full-res photos, and
-  // face-api resizes to its own input size internally anyway.
+  // face-api resizes to its own input size internally anyway. Time-box it: a
+  // degenerate detection can make face-api's promise reject out-of-band and
+  // never settle the one we await, which would freeze the scan.
   const scanCanvas = downscaleToCanvas(fullImg, SCAN_MAX_DIM);
 
-  const detections = await withBackendFallback(() =>
-    faceapi.detectAllFaces(scanCanvas).withFaceLandmarks().withFaceDescriptors()
-  );
+  let detections;
+  try {
+    detections = await withTimeout(
+      withBackendFallback(() =>
+        faceapi.detectAllFaces(scanCanvas).withFaceLandmarks().withFaceDescriptors()
+      ),
+      DETECT_TIMEOUT_MS, 'detection'
+    );
+  } catch (e) {
+    if (FM_DEBUG) console.log('[Find Me][dbg] detect failed/timed out', scanUrl.slice(0, 90), e.message);
+    return false;
+  }
 
   let matched = false;
+  let bestDist = Infinity;
   for (const detection of detections) {
     const distance = faceapi.euclideanDistance(referenceDescriptor, detection.descriptor);
+    if (distance < bestDist) bestDist = distance;
     // Smaller distance = closer match. matchThreshold comes from the popup's
     // strictness slider (~0.6 is the model's usual match cutoff).
     if (distance < matchThreshold) {
       const thumbSrc = downscaleToCanvas(fullImg, THUMB_MAX_DIM).toDataURL('image/jpeg', 0.8);
-      addMatch(img.currentSrc || img.src, thumbSrc);
+      addMatch(fullResUrl, thumbSrc);
       matched = true;
       break; // one match per image
     }
   }
+  if (FM_DEBUG) {
+    console.log(`[Find Me][dbg] ${cand.kind} ${scanCanvas.width}x${scanCanvas.height} faces=${detections.length}` +
+      ` bestDist=${bestDist === Infinity ? 'n/a' : bestDist.toFixed(3)} thr=${matchThreshold}` +
+      ` ${matched ? 'MATCH' : ''} ${scanUrl.slice(0, 90)}`);
+  }
   return matched;
+}
+
+// Find the element that actually scrolls the gallery. Many sites (Google Photos
+// and other virtualized galleries) scroll an inner container, not the window --
+// which makes window.scrollBy a no-op and makes the loop think it's instantly at
+// the bottom. Prefer the document scroller when the page itself scrolls; else
+// pick the largest genuinely-scrollable element on the page.
+function findScroller() {
+  const de = document.scrollingElement || document.documentElement;
+  if (de && de.scrollHeight > de.clientHeight + 4) return de;
+
+  let best = de, bestArea = 0;
+  for (const el of document.querySelectorAll('*')) {
+    if (el.scrollHeight - el.clientHeight < 200) continue;
+    let oy;
+    try { oy = getComputedStyle(el).overflowY; } catch { continue; }
+    if (oy !== 'auto' && oy !== 'scroll') continue;
+    const r = el.getBoundingClientRect();
+    const area = r.width * r.height;
+    if (area > bestArea) { bestArea = area; best = el; }
+  }
+  return best;
 }
 
 // Main scan logic. When autoScroll is set, the page is scrolled progressively
@@ -528,35 +624,50 @@ async function runScan(referenceImages, autoScroll, threshold) {
     let scannedCount = 0;
     let matchCount = 0;
 
-    // Scan every currently-loaded image we haven't seen yet. Returns how many
-    // new images were processed this pass.
+    // Discover every image candidate on the page and scan the ones we haven't
+    // seen yet. Returns how many new candidates were processed this pass.
+    // Candidates whose pixels aren't ready (an <img> still loading, a zero-size
+    // background node) are skipped this pass and retried on the next.
+    const adapter = getAdapter();
     const scanNewImages = async () => {
-      const fresh = Array.from(document.querySelectorAll('img')).filter(img => {
-        const key = img.currentSrc || img.src;
-        return key && !seen.has(key) && img.naturalWidth > 50 && img.naturalHeight > 50;
-      });
+      const candidates = adapter.collect();
+      let processed = 0;
 
-      for (const img of fresh) {
+      for (const cand of candidates) {
         await waitWhileHidden();
         if (scanAborted) break;
-        seen.add(img.currentSrc || img.src);
+
+        // Dedup on the URL we'd save, so the same photo reached via a thumbnail
+        // and its full-res link isn't scanned twice.
+        const key = adapter.resolveFullRes(cand) || cand.src;
+        if (!key || seen.has(key)) continue;
+
+        // Skip icons/sprites and not-yet-loaded images (retried next pass).
+        if (cand.kind === 'img' && !(cand.el.naturalWidth > 50 && cand.el.naturalHeight > 50)) continue;
+        if (cand.kind !== 'img' && renderedLongestSide(cand) < MIN_CANDIDATE_DIM) continue;
+
+        seen.add(key);
+        processed++;
         scannedCount++;
         updateStatus(`Scanning… ${scannedCount} images, ${matchCount} match(es)`);
         try {
-          if (await scanImage(img)) matchCount++;
+          if (await scanCandidate(cand)) matchCount++;
         } catch (e) {
-          console.warn("Could not process image", img.currentSrc || img.src, e);
+          console.warn("Could not process image", cand.src, e);
         }
         // Yield so the browser can paint/scroll during a long scan.
         await new Promise(resolve => setTimeout(resolve));
       }
-      return fresh.length;
+      return processed;
     };
 
     if (!autoScroll) {
       updateStatus("Scanning images on page...");
       await scanNewImages();
     } else {
+      let scroller = findScroller();
+      if (FM_DEBUG) console.log('[Find Me][dbg] scroller:', scroller === document.scrollingElement
+        ? 'document (window)' : scroller.tagName + '.' + (scroller.className || '(no class)'));
       let idlePasses = 0;
       let passes = 0;
       while (passes < MAX_SCROLL_PASSES && !scanAborted) {
@@ -566,8 +677,11 @@ async function runScan(referenceImages, autoScroll, threshold) {
         const found = await scanNewImages();
         if (scanAborted) break;
 
-        const atBottom =
-          window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 2;
+        // Re-find the scroller if the one we have stopped being scrollable (the
+        // gallery may mount after the scan starts).
+        if (!scroller || scroller.scrollHeight <= scroller.clientHeight) scroller = findScroller();
+        const vh = scroller.clientHeight || window.innerHeight;
+        const atBottom = scroller.scrollTop + vh >= scroller.scrollHeight - 2;
 
         if (found === 0 && atBottom) {
           if (++idlePasses >= IDLE_PASSES_TO_STOP) break;
@@ -576,7 +690,7 @@ async function runScan(referenceImages, autoScroll, threshold) {
         }
 
         // Scroll down to trigger more lazy loading, then wait for it.
-        window.scrollBy(0, Math.round(window.innerHeight * AUTO_SCROLL_STEP));
+        scroller.scrollBy(0, Math.round(vh * AUTO_SCROLL_STEP));
         await new Promise(resolve => setTimeout(resolve, LAZY_LOAD_WAIT_MS));
       }
       if (passes >= MAX_SCROLL_PASSES) {
