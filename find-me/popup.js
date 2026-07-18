@@ -210,11 +210,18 @@ document.addEventListener('DOMContentLoaded', () => {
       remove.className = 'thumb-remove';
       remove.textContent = '×';
       remove.title = 'Remove photo';
-      remove.addEventListener('click', async () => {
-        const current = await getReference();
-        current.images.splice(index, 1);
-        current.faces.splice(index, 1);
-        await saveReference(current.images, current.faces);
+      remove.addEventListener('click', () => {
+        // Remove by identity (not the captured index), serialized so it can't
+        // race with in-flight face-check writes.
+        serializeWrite(async () => {
+          const { images, faces } = await getReference();
+          const idx = images.indexOf(dataUrl);
+          if (idx !== -1) {
+            images.splice(idx, 1);
+            faces.splice(idx, 1);
+            await saveReference(images, faces);
+          }
+        });
       });
 
       const badgeInfo = FACE_BADGES[faces[index]] || FACE_BADGES.null;
@@ -249,28 +256,60 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Restore saved reference photos on open; renders stored results, no re-check.
-  getReference().then(({ images, faces }) => renderReferencePhotos(images, faces));
+  // Also heal any pre-existing duplicate images (from before de-dupe on add),
+  // which would otherwise trigger a re-check loop.
+  getReference().then(({ images, faces }) => {
+    const seen = new Set();
+    const dedupImages = [];
+    const dedupFaces = [];
+    images.forEach((dataUrl, i) => {
+      if (seen.has(dataUrl)) return;
+      seen.add(dataUrl);
+      dedupImages.push(dataUrl);
+      dedupFaces.push(faces[i]);
+    });
+    if (dedupImages.length !== images.length) {
+      saveReference(dedupImages, dedupFaces); // saves + renders the cleaned set
+    } else {
+      renderReferencePhotos(images, faces);
+    }
+  });
 
   referencePhotosInput.addEventListener('change', async () => {
     const files = Array.from(referencePhotosInput.files);
     if (files.length === 0) return;
 
     try {
-      const { images: existing, faces: existingFaces } = await getReference();
-      const room = MAX_REFERENCE_PHOTOS - existing.length;
-      if (room <= 0) {
-        referenceStatus.textContent = `Max ${MAX_REFERENCE_PHOTOS} photos. Remove one to add more.`;
-        return;
-      }
-
       referenceStatus.textContent = 'Processing photos...';
-      const added = await Promise.all(files.slice(0, room).map(resizeImageFile));
-      // Save with null results for the new photos; render() will check just those.
-      await saveReference(existing.concat(added), existingFaces.concat(added.map(() => null)));
+      const resized = await Promise.all(files.map(resizeImageFile));
 
-      if (files.length > room) {
-        referenceStatus.textContent = `Added ${room}; ${MAX_REFERENCE_PHOTOS}-photo limit reached.`;
-      }
+      // Append inside the write lock, de-duping against the current set and
+      // within this batch. Duplicate data URLs must never coexist -- identical
+      // images break the indexOf-based result mapping and cause a re-check loop.
+      await serializeWrite(async () => {
+        const { images, faces } = await getReference();
+        const room = MAX_REFERENCE_PHOTOS - images.length;
+        if (room <= 0) {
+          referenceStatus.textContent = `Max ${MAX_REFERENCE_PHOTOS} photos. Remove one to add more.`;
+          return;
+        }
+
+        const have = new Set(images);
+        const toAdd = [];
+        for (const dataUrl of resized) {
+          if (have.has(dataUrl)) continue; // already added (same photo)
+          have.add(dataUrl);
+          toAdd.push(dataUrl);
+          if (toAdd.length >= room) break;
+        }
+
+        if (toAdd.length === 0) {
+          referenceStatus.textContent = 'Those photos are already added.';
+          return;
+        }
+
+        await saveReference(images.concat(toAdd), faces.concat(toAdd.map(() => null)));
+      });
     } catch (e) {
       console.error('[Find Me] Failed to process reference photos:', e);
       referenceStatus.textContent = 'Error processing photos.';
