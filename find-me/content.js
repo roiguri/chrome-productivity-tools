@@ -2,6 +2,7 @@
 let modelsLoaded = false;
 let referenceDescriptor = null;
 let container = null;
+let scanAborted = false; // set when the user closes the bar mid-scan
 
 const SCAN_MAX_DIM = 640;   // px: downscale page images before detection for speed
 const THUMB_MAX_DIM = 200;  // px: small thumbnails for the results drawer
@@ -98,6 +99,7 @@ async function computeReferenceDescriptor(referenceImages) {
   const descriptors = [];
 
   for (let i = 0; i < referenceImages.length; i++) {
+    if (scanAborted) break;
     updateStatus(`Reading reference photo ${i + 1} of ${referenceImages.length}...`);
     try {
       const img = await loadImage(referenceImages[i]);
@@ -134,154 +136,274 @@ async function computeReferenceDescriptor(referenceImages) {
   return avgDescriptor;
 }
 
-// Setup the UI Container (Drawer) for results
+// ---------------------------------------------------------------------------
+// Results UI: a slim "bar" that accumulates matches during a scan, plus a
+// roomy, selectable "gallery" (View all) for reviewing and acting on them.
+// Rendered inside a Shadow DOM so the host page's CSS can't distort it and
+// vice-versa. Matches are only ever appended, so browsing/selection stay put
+// as new matches stream in.
+// ---------------------------------------------------------------------------
+let shadow = null;
+let matches = [];               // { url, thumb }
+let selected = new Set();       // indices into matches
+const PREVIEW_MAX = 5;          // thumbnails shown in the slim bar before "+N"
+
+const CHECK_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg>';
+const OPEN_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3H5a2 2 0 0 0-2 2v4M15 3h4a2 2 0 0 1 2 2v4M9 21H5a2 2 0 0 1-2-2v-4M15 21h4a2 2 0 0 0 2-2v-4"/></svg>';
+
+const FIND_ME_CSS = `
+  :host { all: initial; }
+  * { box-sizing: border-box; font-family: Arial, Helvetica, sans-serif; }
+  [hidden] { display: none !important; }
+
+  .bar { position: fixed; top: 20px; right: 20px; width: 260px; max-height: 80vh;
+    background: #fff; color: #1f2329; border-radius: 10px; box-shadow: 0 6px 24px rgba(0,0,0,.18);
+    display: flex; flex-direction: column; overflow: hidden; }
+  .bar-head { background: #4285F4; color: #fff; padding: 10px 12px; display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; }
+  .title { flex: 1; }
+  .count { background: rgba(255,255,255,.25); border-radius: 10px; padding: 1px 9px; font-size: 12px; min-width: 20px; text-align: center; }
+  .x { background: none; border: none; color: inherit; font-size: 18px; line-height: 1; cursor: pointer; padding: 0 2px; }
+  .status { padding: 7px 12px; font-size: 12px; color: #5f6368; border-bottom: 1px solid #eee; }
+  .preview { padding: 10px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .p-tile, .more { aspect-ratio: 1/1; border-radius: 6px; overflow: hidden; cursor: pointer; }
+  .p-tile { background: #f1f3f4; }
+  .p-tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .more { background: rgba(66,133,244,.12); color: #4285F4; border: 1px dashed #4285F4; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; }
+  .viewall { margin: 2px 10px 10px; padding: 9px; border-radius: 8px; background: #4285F4; color: #fff; border: none; font-weight: 700; font-size: 13px; cursor: pointer; }
+  .viewall:hover { background: #3367d6; }
+
+  .overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
+  .backdrop { position: absolute; inset: 0; background: rgba(10,12,16,.5); }
+  .gallery { position: relative; width: min(900px, 92vw); height: min(80vh, 760px);
+    background: #fff; color: #1f2329; border-radius: 12px; box-shadow: 0 18px 44px rgba(0,0,0,.35);
+    display: flex; flex-direction: column; overflow: hidden; }
+  .g-head { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid #eee; }
+  .g-head .title { flex: 0 0 auto; font-weight: 700; font-size: 15px; }
+  .live { font-size: 12px; color: #5f6368; }
+  .spacer { flex: 1; }
+  .link { font-size: 13px; color: #5f6368; background: none; border: none; cursor: pointer; padding: 4px 6px; border-radius: 6px; }
+  .link:hover { color: #4285F4; }
+  .g-grid { padding: 14px; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    grid-auto-rows: max-content; gap: 12px; align-content: start; flex: 1 1 0; min-height: 0; }
+  .tile { position: relative; aspect-ratio: 4/3; border-radius: 6px; overflow: hidden; background: #f1f3f4; cursor: pointer; }
+  .tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .tile .veil { position: absolute; inset: 0; background: transparent; transition: background .12s; }
+  .tile:hover .veil { background: rgba(20,24,33,.18); }
+  .tile.fresh { animation: fmpop .28s ease; }
+  @keyframes fmpop { from { opacity: 0; } to { opacity: 1; } }
+  .check { position: absolute; top: 8px; left: 8px; width: 23px; height: 23px; border-radius: 50%;
+    background: rgba(255,255,255,.9); border: 1.5px solid rgba(0,0,0,.28); display: flex; align-items: center; justify-content: center;
+    opacity: 0; transition: opacity .12s; color: #fff; }
+  .tile:hover .check, .tile.sel .check { opacity: 1; }
+  .tile.sel .check { background: #4285F4; border-color: #4285F4; }
+  .tile.sel { outline: 3px solid #4285F4; outline-offset: -3px; }
+  .check svg { width: 13px; height: 13px; display: none; }
+  .tile.sel .check svg { display: block; }
+  .open-ico { position: absolute; top: 8px; right: 8px; width: 23px; height: 23px; border-radius: 50%;
+    background: rgba(0,0,0,.4); color: #fff; display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity .12s; }
+  .tile:hover .open-ico { opacity: 1; }
+  .open-ico svg { width: 12px; height: 12px; }
+  .g-foot { border-top: 1px solid #eee; padding: 11px 14px; display: flex; align-items: center; gap: 10px; }
+  .btn { font-size: 13px; font-weight: 700; cursor: pointer; border-radius: 7px; padding: 8px 14px; border: 1px solid transparent; }
+  .btn.primary { background: #4285F4; color: #fff; }
+  .btn.primary:hover { background: #3367d6; }
+  .btn.primary:disabled, .btn.ghost:disabled { opacity: .55; cursor: default; }
+  .btn.ghost { background: transparent; color: #4285F4; border-color: #4285F4; }
+  .btn.ghost:hover:not(:disabled) { background: rgba(66,133,244,.1); }
+`;
+
+const FIND_ME_HTML = `
+  <div class="bar">
+    <div class="bar-head"><span class="title">Find Me</span><span class="count" id="barCount">0</span><button class="x" id="barClose" title="Stop &amp; close">&times;</button></div>
+    <div class="status" id="status">Initializing…</div>
+    <div class="preview" id="preview"></div>
+    <button class="viewall" id="viewAll" hidden>View all</button>
+  </div>
+  <div class="overlay" id="overlay" hidden>
+    <div class="backdrop" id="backdrop"></div>
+    <div class="gallery">
+      <div class="g-head">
+        <span class="title">Photos of you</span>
+        <span class="live" id="galLive"></span>
+        <span class="spacer"></span>
+        <button class="link" id="selAll">Select all</button>
+        <button class="x" id="galClose" title="Back to bar" style="color:#5f6368;">&times;</button>
+      </div>
+      <div class="g-grid" id="galGrid"></div>
+      <div class="g-foot">
+        <span class="live" id="footStatus"></span>
+        <span class="spacer"></span>
+        <button class="btn ghost" id="dlBtn" disabled>Download all</button>
+        <button class="btn primary" id="saveBtn" disabled>Save all to Photos</button>
+      </div>
+    </div>
+  </div>
+`;
+
+function fm(sel) { return shadow ? shadow.querySelector(sel) : null; }
+
 function setupUI() {
   if (container) return;
+  matches = [];
+  selected = new Set();
 
   container = document.createElement('div');
-  container.id = 'find-me-drawer';
-  // Use fixed positioning as per memory constraints to avoid layout side-effects
-  container.style.cssText = `
-    position: fixed;
-    top: 20px;
-    right: 20px;
-    width: 300px;
-    max-height: 80vh;
-    background: white;
-    border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-    z-index: 9999999;
-    font-family: Arial, sans-serif;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  `;
-
-  const header = document.createElement('div');
-  header.style.cssText = `
-    background: #4285F4;
-    color: white;
-    padding: 12px 16px;
-    font-weight: bold;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  `;
-  header.innerHTML = `<span>Find Me</span><button id="find-me-close" style="background:none;border:none;color:white;cursor:pointer;font-size:16px;">&times;</button>`;
-
-  const content = document.createElement('div');
-  content.id = 'find-me-content';
-  content.style.cssText = `
-    padding: 16px;
-    overflow-y: auto;
-    flex-grow: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-  `;
-  content.innerHTML = '<div id="find-me-status" style="color:#666;font-size:14px;">Initializing...</div>';
-
-  container.appendChild(header);
-  container.appendChild(content);
+  container.id = 'find-me-host';
+  container.style.cssText = 'all: initial; position: fixed; top: 0; left: 0; width: 0; height: 0; z-index: 2147483647;';
+  shadow = container.attachShadow({ mode: 'open' });
+  shadow.innerHTML = `<style>${FIND_ME_CSS}</style>${FIND_ME_HTML}`;
   document.body.appendChild(container);
 
-  document.getElementById('find-me-close').addEventListener('click', () => {
-    container.remove();
-    container = null;
-  });
+  fm('#barClose').addEventListener('click', teardownUI);
+  fm('#viewAll').addEventListener('click', openGallery);
+  fm('#galClose').addEventListener('click', closeGallery);
+  fm('#backdrop').addEventListener('click', closeGallery);
+  fm('#selAll').addEventListener('click', toggleSelectAll);
+  fm('#dlBtn').addEventListener('click', () => runBulk('download'));
+  fm('#saveBtn').addEventListener('click', () => runBulk('save'));
+}
+
+function teardownUI() {
+  scanAborted = true; // stop any in-progress scan (detection + auto-scroll)
+  if (container) container.remove();
+  container = null;
+  shadow = null;
+  matches = [];
+  selected = new Set();
 }
 
 function updateStatus(text) {
-  const statusEl = document.getElementById('find-me-status');
-  if (statusEl) statusEl.textContent = text;
+  const el = fm('#status');
+  if (el) el.textContent = text;
 }
 
-// Convert an image element to a data URL, fetching bytes directly so the
-// Upload the matched image to Google Photos. The background worker fetches the
-// original image bytes and uploads them unchanged -- no canvas re-encode -- so
-// the source image's quality is preserved exactly.
-async function uploadToGooglePhotos(imgEl) {
-  return new Promise((resolve, reject) => {
-    chrome.runtime.sendMessage({
-      action: 'uploadImage',
-      url: imgEl.currentSrc || imgEl.src,
-      fileName: 'found-image.jpg'
-    }, (response) => {
-      if (chrome.runtime.lastError) {
-        return reject(new Error(chrome.runtime.lastError.message));
-      }
-      if (response && response.success) {
-        resolve(response.result);
+function openGallery() { const o = fm('#overlay'); if (o) o.hidden = false; }
+function closeGallery() { const o = fm('#overlay'); if (o) o.hidden = true; }
+
+// Append one match to the store, the bar preview, and the gallery grid.
+function addMatch(url, thumb) {
+  const idx = matches.length;
+  matches.push({ url, thumb });
+  const n = matches.length;
+
+  fm('#barCount').textContent = String(n);
+  fm('#galLive').textContent = `${n} found`;
+  const viewAll = fm('#viewAll');
+  viewAll.hidden = false;
+  viewAll.textContent = `View all ${n} →`;
+
+  // slim bar preview: first PREVIEW_MAX thumbnails, then a growing "+N" tile
+  const preview = fm('#preview');
+  if (idx < PREVIEW_MAX) {
+    const t = document.createElement('div');
+    t.className = 'p-tile';
+    t.innerHTML = `<img alt="">`;
+    t.querySelector('img').src = thumb;
+    t.addEventListener('click', openGallery);
+    preview.appendChild(t);
+  } else {
+    let more = fm('#moreCell');
+    if (!more) {
+      more = document.createElement('div');
+      more.id = 'moreCell';
+      more.className = 'more';
+      more.addEventListener('click', openGallery);
+      preview.appendChild(more);
+    }
+    more.textContent = `+${n - PREVIEW_MAX}`;
+  }
+
+  fm('#galGrid').appendChild(createGalleryTile(idx));
+  updateActions();
+}
+
+function createGalleryTile(idx) {
+  const { url, thumb } = matches[idx];
+  const tile = document.createElement('div');
+  tile.className = 'tile fresh';
+  tile.dataset.idx = String(idx);
+  tile.innerHTML =
+    `<img alt="" loading="lazy">` +
+    `<div class="veil"></div>` +
+    `<div class="check">${CHECK_SVG}</div>` +
+    `<div class="open-ico" title="Open full image">${OPEN_SVG}</div>`;
+  tile.querySelector('img').src = thumb;
+  tile.addEventListener('animationend', () => tile.classList.remove('fresh'));
+  tile.addEventListener('click', (e) => {
+    if (e.target.closest('.open-ico')) {   // opening the full image isn't selecting
+      window.open(url, '_blank', 'noopener');
+      return;
+    }
+    if (selected.has(idx)) { selected.delete(idx); tile.classList.remove('sel'); }
+    else { selected.add(idx); tile.classList.add('sel'); }
+    updateActions();
+  });
+  return tile;
+}
+
+function toggleSelectAll() {
+  const total = matches.length;
+  const selectAll = !(selected.size === total && total > 0);
+  selected = new Set();
+  fm('#galGrid').querySelectorAll('.tile').forEach((t) => {
+    const i = Number(t.dataset.idx);
+    if (selectAll) { selected.add(i); t.classList.add('sel'); }
+    else { t.classList.remove('sel'); }
+  });
+  updateActions();
+}
+
+// Reflect the current selection on the action buttons (act on the selection, or
+// on everything when nothing is picked).
+function updateActions() {
+  const selAll = fm('#selAll');
+  if (!selAll) return;
+  const total = matches.length;
+  const sel = selected.size;
+  selAll.textContent = (sel === total && total > 0) ? 'Clear' : 'Select all';
+  const dl = fm('#dlBtn');
+  const save = fm('#saveBtn');
+  dl.textContent = sel ? `Download (${sel})` : 'Download all';
+  save.textContent = sel ? `Save (${sel})` : 'Save all to Photos';
+  dl.disabled = save.disabled = total === 0;
+}
+
+function selectedUrls() {
+  const idxs = selected.size ? [...selected] : matches.map((_, i) => i);
+  return idxs.map((i) => matches[i].url);
+}
+
+// Download to disk (no account) or Save to Google Photos, in bulk, via the
+// background worker (which can fetch cross-origin and, for Save, sign in).
+function runBulk(kind) {
+  const urls = selectedUrls();
+  if (!urls.length) return;
+  const foot = fm('#footStatus');
+  const dl = fm('#dlBtn');
+  const save = fm('#saveBtn');
+  dl.disabled = save.disabled = true;
+
+  if (kind === 'download') {
+    foot.textContent = `Downloading ${urls.length} photo(s)…`;
+    chrome.runtime.sendMessage({ action: 'downloadImages', urls }, (resp) => {
+      updateActions();
+      foot.textContent = resp && resp.success
+        ? `Started ${resp.count} download(s).`
+        : `Download failed: ${resp ? resp.error : 'unknown error'}`;
+    });
+  } else {
+    foot.textContent = `Saving ${urls.length} photo(s) to Google Photos…`;
+    chrome.runtime.sendMessage({ action: 'saveImages', urls }, (resp) => {
+      updateActions();
+      if (resp && resp.success) {
+        foot.textContent = resp.failed
+          ? `Saved ${resp.saved}, ${resp.failed} failed.`
+          : `Saved ${resp.saved} to Google Photos.`;
       } else {
-        reject(new Error(response ? response.error : 'Upload failed'));
+        foot.textContent = `Save failed: ${resp ? resp.error : 'unknown error'}`;
       }
     });
-  });
-}
-
-// Render a found image in the UI with actions. thumbSrc is a small downscaled
-// data URL so the drawer stays light even with many matches; imgEl is kept for
-// the full-resolution upload.
-function addMatchToUI(imgEl, thumbSrc) {
-  const content = document.getElementById('find-me-content');
-  if (!content) return;
-
-  const item = document.createElement('div');
-  item.style.cssText = `
-    border: 1px solid #eee;
-    border-radius: 4px;
-    padding: 8px;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  `;
-
-  const thumb = document.createElement('img');
-  thumb.src = thumbSrc || imgEl.src;
-  thumb.loading = 'lazy';
-  thumb.style.cssText = `
-    width: 100%;
-    height: auto;
-    max-height: 150px;
-    object-fit: contain;
-    border-radius: 4px;
-  `;
-
-  const actions = document.createElement('div');
-  actions.style.display = 'flex';
-  actions.style.gap = '8px';
-
-  const uploadBtn = document.createElement('button');
-  uploadBtn.textContent = 'Save to Photos';
-  uploadBtn.style.cssText = `
-    flex: 1;
-    background: #4285F4;
-    color: white;
-    border: none;
-    padding: 6px;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 12px;
-  `;
-
-  uploadBtn.addEventListener('click', async () => {
-    uploadBtn.disabled = true;
-    uploadBtn.textContent = 'Saving...';
-    try {
-      await uploadToGooglePhotos(imgEl);
-      uploadBtn.textContent = 'Saved!';
-      uploadBtn.style.background = '#0f9d58';
-    } catch (e) {
-      console.error(e);
-      uploadBtn.textContent = 'Error';
-      uploadBtn.style.background = '#d93025';
-    }
-  });
-
-  actions.appendChild(uploadBtn);
-  item.appendChild(thumb);
-  item.appendChild(actions);
-  content.appendChild(item);
+  }
 }
 
 // Scan a single already-loaded <img> for a match, appending to the drawer if
@@ -296,22 +418,25 @@ async function scanImage(img) {
     faceapi.detectAllFaces(scanCanvas).withFaceLandmarks().withFaceDescriptors()
   );
 
+  let matched = false;
   for (const detection of detections) {
     const distance = faceapi.euclideanDistance(referenceDescriptor, detection.descriptor);
     // Distance < 0.6 is generally considered a match for this model
     if (distance < 0.6) {
       const thumbSrc = downscaleToCanvas(fullImg, THUMB_MAX_DIM).toDataURL('image/jpeg', 0.8);
-      addMatchToUI(img, thumbSrc);
-      return true;
+      addMatch(img.currentSrc || img.src, thumbSrc);
+      matched = true;
+      break; // one match per image
     }
   }
-  return false;
+  return matched;
 }
 
 // Main scan logic. When autoScroll is set, the page is scrolled progressively
 // and newly loaded images are scanned as they appear (streaming), rather than
 // waiting for the whole gallery to load first.
 async function runScan(referenceImages, autoScroll) {
+  scanAborted = false;
   setupUI();
   updateStatus("Loading AI Models...");
 
@@ -323,10 +448,11 @@ async function runScan(referenceImages, autoScroll) {
   try {
     await loadModels();
 
-    if (!referenceDescriptor) {
-      updateStatus("Processing reference photos...");
-      referenceDescriptor = await computeReferenceDescriptor(referenceImages);
-    }
+    // Always recompute from the photos passed with this scan -- caching across
+    // scans would keep matching the first set even after you change your
+    // reference photos in the popup.
+    updateStatus("Processing reference photos...");
+    referenceDescriptor = await computeReferenceDescriptor(referenceImages);
 
     const seen = new Set();
     let scannedCount = 0;
@@ -341,6 +467,7 @@ async function runScan(referenceImages, autoScroll) {
       });
 
       for (const img of fresh) {
+        if (scanAborted) break;
         seen.add(img.currentSrc || img.src);
         scannedCount++;
         updateStatus(`Scanning… ${scannedCount} images, ${matchCount} match(es)`);
@@ -361,9 +488,10 @@ async function runScan(referenceImages, autoScroll) {
     } else {
       let idlePasses = 0;
       let passes = 0;
-      while (passes < MAX_SCROLL_PASSES) {
+      while (passes < MAX_SCROLL_PASSES && !scanAborted) {
         passes++;
         const found = await scanNewImages();
+        if (scanAborted) break;
 
         const atBottom =
           window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 2;
@@ -383,11 +511,7 @@ async function runScan(referenceImages, autoScroll) {
       }
     }
 
-    const status = document.getElementById('find-me-status');
-    if (status) {
-      status.style.display = 'block';
-      status.textContent = `Scan complete. Scanned ${scannedCount} images, found ${matchCount} match(es).`;
-    }
+    updateStatus(`Scan complete · ${scannedCount} images · ${matchCount} match(es)`);
 
   } catch (error) {
     console.error("Scan Error:", error);

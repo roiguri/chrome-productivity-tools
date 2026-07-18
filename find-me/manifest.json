@@ -24,7 +24,8 @@
     "identity",
     "storage",
     "activeTab",
-    "scripting"
+    "scripting",
+    "downloads"
   ],
   "host_permissions": [
     "https://photoslibrary.googleapis.com/*",
