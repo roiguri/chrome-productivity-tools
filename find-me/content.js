@@ -384,11 +384,11 @@ function runBulk(kind) {
   dl.disabled = save.disabled = true;
 
   if (kind === 'download') {
-    foot.textContent = `Downloading ${urls.length} photo(s)…`;
+    foot.textContent = `Preparing a zip of ${urls.length} photo(s)…`;
     chrome.runtime.sendMessage({ action: 'downloadImages', urls }, (resp) => {
       updateActions();
       foot.textContent = resp && resp.success
-        ? `Started ${resp.count} download(s).`
+        ? `Downloaded ${resp.count} photo(s) as a zip.`
         : `Download failed: ${resp ? resp.error : 'unknown error'}`;
     });
   } else {
