@@ -15,7 +15,7 @@ A collection of Chrome extensions for enhancing productivity in web applications
     <td align="center"><a href="./direction-switcher/"><img src="./direction-switcher/icons/icon128.png" width="68" height="68" alt="Direction Switcher" /></a></td>
     <td align="center"><a href="./peer-share/"><img src="./peer-share/icons/icon128.png" width="65" height="65" alt="Peer Share" /></a></td>
     <td align="center"><a href="./password-generator/"><img src="./password-generator/icons/icon128.png" width="65" height="65" alt="Password Generator" /></a></td>
-    <td align="center"><a href="./find-me/"><img src="./find-me/icons/icon128.png" width="65" height="65" alt="Find Me" /></a></td>
+    <td align="center"><a href="./find-me/"><img src="./find-me/icons/icon128.png" width="70" height="70" alt="Find Me" /></a></td>
   </tr>
   <tr>
     <td align="center"><a href="./equation-shortcut/">Equation Shortcut</a></td>
